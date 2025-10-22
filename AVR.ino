@@ -35,13 +35,11 @@ const uint8_t ledPin = 13;
 uint32_t currTime;
 uint32_t dt;
 bool lastMainState = !LOW;
-bool lastUpState = !LOW;
-bool lastDownState = !LOW;
 uint32_t lastOnTime;
 uint32_t lastOffTime;
 bool firstStart = true; //if true make the first space not print
 
-char charBuf[20];
+uint8_t charBuf;
 char fileBuf[900];
 
 const uint32_t piezo_freq_1 = 440;
@@ -54,6 +52,279 @@ uint32_t dash_len;
 uint32_t dot_thres; //threshold, if ms below this it is considered to be a dot, otherwise dash
 uint32_t inter_char_len;
 
+//lookup table
+const uint8_t morse_code_keys[] PROGMEM = {
+    0b00000010, //1 len
+    0b00000011,
+    0b00000100, //2 len
+    0b00000101,
+    0b00000110,
+    0b00000111,
+    0b00001000, //3 len
+    0b00001001,
+    0b00001010,
+    0b00001011,
+    0b00001100,
+    0b00001101,
+    0b00001110,
+    0b00001111,
+    0b00010000, //4 len
+    0b00010001,
+    0b00010010,
+    0b00010011,
+    0b00010100,
+    0b00010101,
+    0b00010110,
+    0b00010111,
+    0b00011000,
+    0b00011001,
+    0b00011010,
+    0b00011011,
+    0b00011100,
+    0b00011101,
+    0b00011110,
+    0b00011111,
+
+    0b00100000, //5.1 len
+    0b00100001,
+    0b00100010,
+    0b00100011,
+    0b00100100,
+    0b00100101,
+    0b00100110,
+    0b00100111,
+    0b00101000,
+    0b00101001,
+    0b00101010,
+    0b00101011,
+    0b00101100,
+    0b00101101,
+    0b00101110,
+    0b00101111,
+    0b00110000, //5.2 len
+    0b00110001,
+    0b00110010,
+    0b00110011,
+    0b00110100,
+    0b00110101,
+    0b00110110,
+    0b00110111,
+    0b00111000,
+    0b00111001,
+    0b00111010,
+    0b00111011,
+    0b00111100,
+    0b00111101,
+    0b00111110,
+    0b00111111,
+
+    0b01000000, //6.1 len
+    0b01000001,
+    0b01000010,
+    0b01000011,
+    0b01000100,
+    0b01000101,
+    0b01000110,
+    0b01000111,
+    0b01001000,
+    0b01001001,
+    0b01001010,
+    0b01001011,
+    0b01001100,
+    0b01001101,
+    0b01001110,
+    0b01001111,
+    0b01010000,
+    0b01010001,
+    0b01010010,
+    0b01010011,
+    0b01010100,
+    0b01010101,
+    0b01010110,
+    0b01010111,
+    0b01011000,
+    0b01011001,
+    0b01011010,
+    0b01011011,
+    0b01011100,
+    0b01011101,
+    0b01011110,
+    0b01011111,
+
+    0b01100000, //6.2 len
+    0b01100001,
+    0b01100010,
+    0b01100011,
+    0b01100100,
+    0b01100101,
+    0b01100110,
+    0b01100111,
+    0b01101000,
+    0b01101001,
+    0b01101010,
+    0b01101011,
+    0b01101100,
+    0b01101101,
+    0b01101110,
+    0b01101111,
+    0b01110000,
+    0b01110001,
+    0b01110010,
+    0b01110011,
+    0b01110100,
+    0b01110101,
+    0b01110110,
+    0b01110111,
+    0b01111000,
+    0b01111001,
+    0b01111010,
+    0b01111011,
+    0b01111100,
+    0b01111101,
+    0b01111110,
+    0b01111111,
+
+
+
+};
+const char morse_code_chars[] PROGMEM = {
+    'e', //1 len
+    't',
+
+    'i', //2 len
+    'a',
+    'n',
+    'm',
+
+    's', //3 len
+    'u',
+    'r',
+    'w',
+    'd',
+    'k',
+    'g',
+    'o',
+
+    'h', //4 len
+    'v',
+    'f',
+    0xA, //enter ..-- = 0xA LF
+    'l',
+    ' ', //space .-.-
+    'p',
+    'j',
+    'b',
+    'x',
+    'c',
+    'y',
+    'z',
+    'q',
+    0x6, //exit/confirm ---. = 0x6 ACK
+    0x8, //backspace ---- = 0x8 BS
+
+    '5', //5.1 len
+    '4',
+    0, //0s are null characters
+    '3',
+    0,
+    0,
+    0,
+    '2',
+    '&',
+    0,
+    '+',
+    0,
+    0,
+    0,
+    0,
+    '1',
+
+    '6', //5.2 len
+    '=',
+    '/',
+    0,
+    0,
+    0,
+    '(',
+    0,
+    '7',
+    0,
+    0,
+    0,
+    '8',
+    0,
+    '9',
+    '0',
+
+    0, //6.1 len
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    '?',
+    0,
+    0,
+    0,
+    0,
+    0,
+    '"',
+    0,
+    0,
+    '.',
+    0,
+    0,
+    0,
+    0,
+    '@',
+    0,
+    0,
+    0,
+    '\'',
+    0,
+
+    0, //6.2 len
+    '-',
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    '!',
+    0,
+    ')',
+    0,
+    0,
+    0,
+    0,
+    0,
+    ',',
+    0,
+    0,
+    0,
+    0,
+    ':',
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+};
+
+
+
 void morse_code_output_on(uint8_t piezo, uint32_t piezo_freq){
     digitalWrite(ledPin, HIGH);
     tone(piezo, piezo_freq);
@@ -63,7 +334,6 @@ void morse_code_output_off(uint8_t piezo){
     noTone(piezo);
 }
 void play_ringtone(){
-
 /*
     morse_code_output_on(piezo1Pin, 311);
     delay(100);
@@ -156,13 +426,11 @@ void setup(){
     dot_len = 1200 / wpm;
     dash_len = 3 * dot_len;
     dot_thres = 1.8 * dot_len;
-    inter_char_len = 7 * dot_len;
+    inter_char_len = 4 * dot_len;
 
+    charBuf = 1;
     firstStart = true;
-    //zero out the buffers
-    for(uint32_t i=0;i<sizeof(charBuf)/sizeof(char);i++){
-        charBuf[i] = '\0';
-    }
+    //zero out the buffer(s)
     for(uint32_t i=0;i<sizeof(fileBuf)/sizeof(char);i++){
         fileBuf[i] = '\0';
     }
@@ -175,16 +443,12 @@ void setup(){
 
     lastOnTime = millis();
     lastOffTime = millis();
-    //play_ringtone();
+    play_ringtone();
 }
 
 void loop(){
-    for(uint32_t i=0;i<sizeof(charBuf)/sizeof(char);i++){
-        charBuf[i] = '\0';
-    }
-    for(uint32_t i=0;i<sizeof(fileBuf)/sizeof(char);i++){
-        fileBuf[i] = '\0';
-    }
+
+
     bool mainState = !digitalRead(mainButtonPin);
     bool upState = !digitalRead(upButtonPin);
     bool downState = !digitalRead(downButtonPin);
@@ -202,10 +466,28 @@ void loop(){
             dt = currTime - lastOnTime; //time the button is on
             if(dt > 3){
                 if(dt < dot_thres){
-                    Serial.print(".");
+                    Serial.print("."); //add 0 to the char buffer
+                    //only add if the buffer is not full, otherwise reset buffer
+                    if(charBuf & 0b10000000){ //full with 7 chars
+                        charBuf = 1; //reset
+                        Serial.println("RESET");
+                    }
+                    else{
+                        charBuf <<= 1;
+                        charBuf |= 0;
+                    }
                 }
                 else{
                     Serial.print("-");
+                    //only add if the buffer is not full, otherwise reset buffer
+                    if(charBuf & 0b10000000){ //full with 7 chars
+                        charBuf = 1; //reset
+                        Serial.println("RESET");
+                    }
+                    else{
+                        charBuf <<= 1;
+                        charBuf |= 0;
+                    }
                 }
             }
             //start timing the non button press
@@ -234,12 +516,16 @@ void loop(){
         Serial.print("-");
         morse_code_output_on(piezo2Pin, piezo_freq_2);
         delay(dash_len);
-        morse_code_output_off(piezo2Pin);
-        delay(dash_len);
+
 
         //counts as falling edge
         //start timing the non button press
         lastOffTime = millis();
+
+
+        morse_code_output_off(piezo2Pin);
+        delay(dash_len);
+
     }
 
 
@@ -249,6 +535,34 @@ void loop(){
             dt = currTime - lastOffTime; //how much time the button is off
             if(dt > inter_char_len && dt < inter_char_len * 2){
                 Serial.print(" ");
+
+                charBuf = 1; //reset
+                //get character from lookup table
+                uint32_t index;
+                for(int i=0;i<sizeof(morse_code_keys);i++){
+                    if(pgm_read_byte(&morse_code_keys[i]) == charBuf){
+                        char decoded = pgm_read_byte(&morse_code_chars[i]);
+                        if(decoded >= ' '){
+                            Serial.println(decoded);
+                        }
+                        else if(decoded == 0xA){
+                            Serial.println("LF");
+                        }
+                        else if(decoded == 0x6){
+                            Serial.println("ACK");
+                        }
+                        else if(decoded == 0x8){
+                            Serial.println("BS");
+                        }
+                        else if(decoded == 0){
+                            Serial.println("NULL");
+                        }
+                        else{
+                            Serial.println("EGG");
+                        }
+                    }
+                }
+
                 lastOffTime = -inter_char_len * 3;
             }
         }
@@ -260,16 +574,7 @@ void loop(){
 
 
 
-
-
-
-
-
     lastMainState = mainState;
-    lastUpState = upState;
-    lastDownState = downState;
-
-
 }
 
 
