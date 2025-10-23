@@ -18,20 +18,40 @@ A(LED+) 5V+330Ω resistor
 K(LED-) GND
 
 main button 2
-left/up button 4
-right/down button 3
+left/up button 7
+right/down button 4
 piezos 11 10 9
+
+RGBLED: red 6 green 3 blue 5
 */
 
-const uint8_t upButtonPin = 4;
-const uint8_t downButtonPin = 3;
+typedef struct{
+    uint8_t red;
+    uint8_t green;
+    uint8_t blue;
+} RGB;
+
+//button configurations
+const uint8_t upButtonPin = 7;
+const uint8_t downButtonPin = 4;
 const uint8_t mainButtonPin = 2;
+
+//piezo configurations
 const uint8_t piezo1Pin = 11;
 const uint8_t piezo2Pin = 10;
 const uint8_t piezo3Pin = 9;
-const uint8_t ledPin = 13;
 
+const uint32_t piezo_freq_1 = 440;
+const uint32_t piezo_freq_2 = 660;
+const uint32_t piezo_freq_3 = 466;
 
+//LED configurations
+RGB ledColor{255, 255, 0};
+RGB ledColor2{0, 255, 255};
+RGB ledColor3{255, 0, 0};
+const RGB ledPins{6, 3, 5};
+
+//runtime use
 uint32_t currTime;
 uint32_t dt;
 bool lastMainState = !LOW;
@@ -42,10 +62,7 @@ bool firstStart = true; //if true make the first space not print
 uint8_t charBuf;
 char fileBuf[900];
 
-const uint32_t piezo_freq_1 = 440;
-const uint32_t piezo_freq_2 = 660;
-
-const uint8_t wpm = 15;
+const uint8_t wpm = 20;
 
 uint32_t dot_len;
 uint32_t dash_len;
@@ -324,39 +341,52 @@ const char morse_code_chars[] PROGMEM = {
 };
 
 
-
-void morse_code_output_on(uint8_t piezo, uint32_t piezo_freq){
-    digitalWrite(ledPin, HIGH);
+void morse_code_output_on(uint8_t piezo, uint32_t piezo_freq, RGB color){
+    analogWrite(ledPins.red, 255-color.red);
+    analogWrite(ledPins.green, 255-color.green);
+    analogWrite(ledPins.blue, 255-color.blue);
     tone(piezo, piezo_freq);
 }
 void morse_code_output_off(uint8_t piezo){
-    digitalWrite(ledPin, LOW);
+    analogWrite(ledPins.red, 255);
+    analogWrite(ledPins.green, 255);
+    analogWrite(ledPins.blue, 255);
     noTone(piezo);
+}
+void morse_code_output_warning(uint8_t piezo, uint32_t piezo_freq, RGB color){
+    morse_code_output_on(piezo, piezo_freq, color);
+    delay(50);
+    morse_code_output_off(piezo);
+    delay(10);
+    morse_code_output_on(piezo, piezo_freq, color);
+    delay(50);
+    morse_code_output_off(piezo);
+    delay(100);
 }
 void play_ringtone(){
 /*
-    morse_code_output_on(piezo1Pin, 311);
+    morse_code_output_on(piezo1Pin, 311, ledColor);
     delay(100);
     morse_code_output_off(piezo1Pin);
     delay(5);
-    morse_code_output_on(piezo2Pin, 391);
+    morse_code_output_on(piezo2Pin, 391, ledColor);
     delay(100);
     morse_code_output_off(piezo2Pin);
     delay(5);
-    morse_code_output_on(piezo3Pin, 466);
+    morse_code_output_on(piezo3Pin, 466, ledColor);
     delay(100);
     morse_code_output_off(piezo3Pin);
     delay(5);
-    morse_code_output_on(piezo1Pin, 622);
+    morse_code_output_on(piezo1Pin, 622, ledColor);
     delay(100);
     morse_code_output_off(piezo1Pin);
     delay(5);
 */
 
-    morse_code_output_on(piezo3Pin, 622);
+    morse_code_output_on(piezo3Pin, 622, ledColor);
     int a = millis();
     const int e = 3150;
-    while(millis() - a < 100){
+    while(millis() - a < 60){
         digitalWrite(piezo1Pin, HIGH);
         digitalWrite(piezo2Pin, HIGH);
         delayMicroseconds(0.333*e);
@@ -380,9 +410,9 @@ void play_ringtone(){
     }
     morse_code_output_off(piezo3Pin);
     delay(50);
-    morse_code_output_on(piezo3Pin, 622);
+    morse_code_output_on(piezo3Pin, 622, ledColor2);
     a = millis();
-    while(millis() - a < 400){
+    while(millis() - a < 200){
         digitalWrite(piezo1Pin, HIGH);
         digitalWrite(piezo2Pin, HIGH);
         delayMicroseconds(0.333*e);
@@ -412,7 +442,9 @@ void setup(){
     pinMode(upButtonPin, INPUT_PULLUP);
     pinMode(downButtonPin, INPUT_PULLUP);
     pinMode(mainButtonPin, INPUT_PULLUP);
-    pinMode(ledPin, OUTPUT);
+    pinMode(ledPins.red, OUTPUT);
+    pinMode(ledPins.green, OUTPUT);
+    pinMode(ledPins.blue, OUTPUT);
     pinMode(piezo1Pin, OUTPUT);
     pinMode(piezo2Pin, OUTPUT);
     pinMode(piezo3Pin, OUTPUT);
@@ -435,77 +467,95 @@ void setup(){
         fileBuf[i] = '\0';
     }
 
-    Serial.println("Hello World!");
-    Serial.print(F("Dot length: "));Serial.println(dot_len);
-    Serial.print(F("Dash length: "));Serial.println(dash_len);
-    Serial.print(F("Dot threshold: "));Serial.println(dot_thres);
-    Serial.print(F("inter char length: "));Serial.println(inter_char_len);
+    Serial.println("Nuck arduinOS");
+    Serial.print("WPM: ");Serial.println(wpm);
+
+    play_ringtone();
 
     lastOnTime = millis();
     lastOffTime = millis();
-    play_ringtone();
+
 }
 
 void loop(){
-
 
     bool mainState = !digitalRead(mainButtonPin);
     bool upState = !digitalRead(upButtonPin);
     bool downState = !digitalRead(downButtonPin);
     currTime = millis();
 
-    if(mainState){
-        morse_code_output_on(piezo1Pin, piezo_freq_1);
-    }
-    else{
-        morse_code_output_off(piezo1Pin);
-    }
-
     if(mainState != lastMainState){
         if(lastMainState){ //triggered falling edge
+            //start timing the non button press
+            lastOffTime = millis();
+
+            morse_code_output_off(piezo1Pin);
+
+
             dt = currTime - lastOnTime; //time the button is on
             if(dt > 3){
                 if(dt < dot_thres){
-                    Serial.print("."); //add 0 to the char buffer
                     //only add if the buffer is not full, otherwise reset buffer
-                    if(charBuf & 0b10000000){ //full with 7 chars
+                    if(charBuf & 0b1000000){ //full
                         charBuf = 1; //reset
-                        Serial.println("RESET");
+                        Serial.println("RST");
+                        morse_code_output_warning(piezo1Pin, piezo_freq_3, ledColor3);
+                        firstStart = true;
                     }
                     else{
+                        Serial.print("."); //add 0 to the char buffer
                         charBuf <<= 1;
                         charBuf |= 0;
                     }
                 }
                 else{
-                    Serial.print("-");
                     //only add if the buffer is not full, otherwise reset buffer
-                    if(charBuf & 0b10000000){ //full with 7 chars
+                    if(charBuf & 0b1000000){ //full
                         charBuf = 1; //reset
-                        Serial.println("RESET");
+                        Serial.println("RST");
+                        morse_code_output_warning(piezo1Pin, piezo_freq_3, ledColor3);
+                        firstStart = true;
                     }
                     else{
+                        Serial.print("-"); //add 1 to the char buffer
                         charBuf <<= 1;
-                        charBuf |= 0;
+                        charBuf |= 1;
                     }
                 }
             }
-            //start timing the non button press
-            lastOffTime = millis();
         }
         else{ //triggered rising edge
             //start timing the button press
             lastOnTime = currTime;
+
+
+            morse_code_output_on(piezo1Pin, piezo_freq_1, ledColor);
         }
     }
 
     if(upState){
 
-        Serial.print(".");
-        morse_code_output_on(piezo1Pin, piezo_freq_1);
+        //only add if the buffer is not full, otherwise reset buffer
+        if(charBuf & 0b1000000){ //full
+            charBuf = 1; //reset
+            Serial.println("RST");
+            morse_code_output_warning(piezo1Pin, piezo_freq_3, ledColor3);
+            firstStart = true;
+        }
+        else{
+            Serial.print(".");
+            charBuf <<= 1;
+            charBuf |= 0;
+        }
+
+
+        morse_code_output_on(piezo2Pin, piezo_freq_1, ledColor2);
         delay(dot_len);
-        morse_code_output_off(piezo1Pin);
+
+
+        morse_code_output_off(piezo2Pin);
         delay(dot_len);
+
 
         //counts as falling edge
         //start timing the non button press
@@ -513,17 +563,27 @@ void loop(){
     }
     if(downState){
 
-        Serial.print("-");
-        morse_code_output_on(piezo2Pin, piezo_freq_2);
+        //only add if the buffer is not full, otherwise reset buffer
+        if(charBuf & 0b1000000){ //full
+            charBuf = 1; //reset
+            Serial.println("RST");
+            morse_code_output_warning(piezo1Pin, piezo_freq_3, ledColor3);
+            firstStart = true;
+        }
+        else{
+            Serial.print("-");
+            charBuf <<= 1;
+            charBuf |= 1;
+        }
+        
+        morse_code_output_on(piezo3Pin, piezo_freq_2, ledColor2);
         delay(dash_len);
-
 
         //counts as falling edge
         //start timing the non button press
         lastOffTime = millis();
 
-
-        morse_code_output_off(piezo2Pin);
+        morse_code_output_off(piezo3Pin);
         delay(dash_len);
 
     }
@@ -536,10 +596,8 @@ void loop(){
             if(dt > inter_char_len && dt < inter_char_len * 2){
                 Serial.print(" ");
 
-                charBuf = 1; //reset
                 //get character from lookup table
-                uint32_t index;
-                for(int i=0;i<sizeof(morse_code_keys);i++){
+                for(int i=0;i<sizeof(morse_code_keys)/sizeof(morse_code_keys[0]);i++){
                     if(pgm_read_byte(&morse_code_keys[i]) == charBuf){
                         char decoded = pgm_read_byte(&morse_code_chars[i]);
                         if(decoded >= ' '){
@@ -563,6 +621,8 @@ void loop(){
                     }
                 }
 
+                //reset character buffer as well as off time so space doesn't get printed infinitely
+                charBuf = 1;
                 lastOffTime = -inter_char_len * 3;
             }
         }
