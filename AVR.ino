@@ -30,6 +30,10 @@ typedef struct{
     uint8_t green;
     uint8_t blue;
 } RGB;
+typedef struct{
+    uint8_t x;
+    uint8_t y;
+} Vector2;
 
 //button configurations
 const uint8_t upButtonPin = 7;
@@ -41,9 +45,7 @@ const uint8_t piezo1Pin = 11;
 const uint8_t piezo2Pin = 10;
 const uint8_t piezo3Pin = 9;
 
-const uint32_t piezo_freq_1 = 440;
-const uint32_t piezo_freq_2 = 660;
-const uint32_t piezo_freq_3 = 466;
+const uint16_t piezoFreqs[3] = {440, 660, 466};
 
 //LED configurations
 RGB ledColor{255, 255, 0};
@@ -57,17 +59,21 @@ uint32_t dt;
 bool lastMainState = !LOW;
 uint32_t lastOnTime;
 uint32_t lastOffTime;
+uint32_t lastDisplayRefresh;
 bool firstStart = true; //if true make the first space not print
-
-uint8_t charBuf;
-char fileBuf[900];
-
-const uint8_t wpm = 20;
 
 uint32_t dot_len;
 uint32_t dash_len;
 uint32_t dot_thres; //threshold, if ms below this it is considered to be a dot, otherwise dash
 uint32_t inter_char_len;
+
+uint8_t charBuf;
+char fileBuf[901] = {0}; //900 max for a file
+char displayBuf[2][17] = {{' '}}; //screen size + null terminator
+Vector2 displayPos = {0, 0};
+
+//modifiable settings
+const uint8_t wpm = 20;
 
 //lookup table
 const uint8_t morse_code_keys[] PROGMEM = {
@@ -359,9 +365,9 @@ void morse_code_output_warning(uint8_t piezo, uint32_t piezo_freq, RGB color){
     morse_code_output_off(piezo);
     delay(10);
     morse_code_output_on(piezo, piezo_freq, color);
-    delay(50);
+    delay(350);
     morse_code_output_off(piezo);
-    delay(100);
+    delay(10);
 }
 void play_ringtone(){
 /*
@@ -437,6 +443,113 @@ void play_ringtone(){
     morse_code_output_off(piezo3Pin);
 }
 
+void LCDRefresh(){
+    for(int y = 0; y < 2; y++){
+        lcd.setCursor(0, y);
+        lcd.print(displayBuf[y]);
+    }
+    lcd.setCursor(displayPos.x, displayPos.y);
+
+}
+
+/*
+if(decoded >= ' '){
+    Serial.println(decoded);
+}
+else if(decoded == 0xA){
+    Serial.println("LF");
+}
+else if(decoded == 0x6){
+    Serial.println("ACK");
+}
+else if(decoded == 0x8){
+    Serial.println("BS");
+}
+else if(decoded == 0){
+    Serial.println("NULL");
+}
+else{
+    Serial.println("EGG");
+}
+*/
+
+
+void LCDPutChar(char niko){
+    char* target = &displayBuf[displayPos.y][displayPos.x];
+    bool advance = true;
+    bool advanceForwards = true;
+    bool bksp = false;
+    bool line_feed = false;
+    //print as displaypos
+    if(niko >= ' '){
+        *target = niko;
+    }
+    else if(niko == 0xA){ //LF ..--
+        line_feed = true;
+    }
+    else if(niko == 0x6){ //ACK ---.
+        *target = 'A';
+    }
+    else if(niko == 0x8){ //BS .-.-
+        //backspace
+        bksp = true;
+        advanceForwards = false;
+    }
+    else{
+        *target = 'N';
+    }
+
+
+    //increment displaypos
+    if(!advance){
+        return;
+    }
+    if(advanceForwards){
+        if(displayPos.x == 15 || line_feed){ //if reached the end of a line
+            displayPos.x = 0;
+            //advance y, scroll if needed
+            if(displayPos.y == 0){
+                displayPos.y = 1;
+            }
+            else if(displayPos.y == 1){
+                //scroll screen
+                bool line2_empty = true; //if line2 stays empty, move cursor to 0, 0 for fresh writing
+                for(int i=0;i<sizeof(displayBuf[0])/sizeof(displayBuf[0][0])-1;i++){
+                    if(displayBuf[1][i] != ' '){
+                        line2_empty = false;
+                    }
+                    displayBuf[0][i] = displayBuf[1][i];
+                    displayBuf[1][i] = ' ';
+                }
+                if(line2_empty){
+                    displayPos.y = 0;
+                }
+            }
+        }
+        else{
+            displayPos.x++;
+        }
+    }
+    else{ //go back
+        if(displayPos.x == 0){ //if reached the start of a line
+            //decrement y only if y is on the second line
+            if(displayPos.y == 1){
+                //go to end of first line
+                displayPos.y = 0;
+                displayPos.x = 15;
+
+            }
+        }
+        else{
+            displayPos.x--;
+        }
+    }
+
+    if(bksp){
+        displayBuf[displayPos.y][displayPos.x] = ' '; //set to space
+    }
+}
+
 void setup(){
     //morse code input and output
     pinMode(upButtonPin, INPUT_PULLUP);
@@ -452,7 +565,6 @@ void setup(){
     Serial.begin(115200);
     lcd.begin(16, 2);
     lcd.blink();
-    lcd.print("Hello World!");
 
     //calculate some things
     dot_len = 1200 / wpm;
@@ -462,19 +574,21 @@ void setup(){
 
     charBuf = 1;
     firstStart = true;
-    //zero out the buffer(s)
-    for(uint32_t i=0;i<sizeof(fileBuf)/sizeof(char);i++){
-        fileBuf[i] = '\0';
+
+    //just put the null terminators in the bag lil bro
+    for(int i=0;i<2;i++){
+        displayBuf[i][16] = 0;
     }
 
     Serial.println("Nuck arduinOS");
     Serial.print("WPM: ");Serial.println(wpm);
 
+
     play_ringtone();
 
     lastOnTime = millis();
     lastOffTime = millis();
-
+    lastDisplayRefresh = millis();
 }
 
 void loop(){
@@ -499,8 +613,8 @@ void loop(){
                     if(charBuf & 0b1000000){ //full
                         charBuf = 1; //reset
                         Serial.println("RST");
-                        morse_code_output_warning(piezo1Pin, piezo_freq_3, ledColor3);
                         firstStart = true;
+                        morse_code_output_warning(piezo1Pin, piezoFreqs[2], ledColor3);
                     }
                     else{
                         Serial.print("."); //add 0 to the char buffer
@@ -513,8 +627,8 @@ void loop(){
                     if(charBuf & 0b1000000){ //full
                         charBuf = 1; //reset
                         Serial.println("RST");
-                        morse_code_output_warning(piezo1Pin, piezo_freq_3, ledColor3);
                         firstStart = true;
+                        morse_code_output_warning(piezo1Pin, piezoFreqs[2], ledColor3);
                     }
                     else{
                         Serial.print("-"); //add 1 to the char buffer
@@ -529,7 +643,7 @@ void loop(){
             lastOnTime = currTime;
 
 
-            morse_code_output_on(piezo1Pin, piezo_freq_1, ledColor);
+            morse_code_output_on(piezo1Pin, piezoFreqs[0], ledColor);
         }
     }
 
@@ -539,8 +653,8 @@ void loop(){
         if(charBuf & 0b1000000){ //full
             charBuf = 1; //reset
             Serial.println("RST");
-            morse_code_output_warning(piezo1Pin, piezo_freq_3, ledColor3);
             firstStart = true;
+            morse_code_output_warning(piezo1Pin, piezoFreqs[2], ledColor3);
         }
         else{
             Serial.print(".");
@@ -549,17 +663,16 @@ void loop(){
         }
 
 
-        morse_code_output_on(piezo2Pin, piezo_freq_1, ledColor2);
+        morse_code_output_on(piezo2Pin, piezoFreqs[0], ledColor2);
         delay(dot_len);
-
-
-        morse_code_output_off(piezo2Pin);
-        delay(dot_len);
-
 
         //counts as falling edge
         //start timing the non button press
         lastOffTime = millis();
+
+        morse_code_output_off(piezo2Pin);
+        delay(dot_len);
+        
     }
     if(downState){
 
@@ -567,8 +680,8 @@ void loop(){
         if(charBuf & 0b1000000){ //full
             charBuf = 1; //reset
             Serial.println("RST");
-            morse_code_output_warning(piezo1Pin, piezo_freq_3, ledColor3);
             firstStart = true;
+            morse_code_output_warning(piezo1Pin, piezoFreqs[2], ledColor3);
         }
         else{
             Serial.print("-");
@@ -576,7 +689,7 @@ void loop(){
             charBuf |= 1;
         }
         
-        morse_code_output_on(piezo3Pin, piezo_freq_2, ledColor2);
+        morse_code_output_on(piezo3Pin, piezoFreqs[1], ledColor2);
         delay(dash_len);
 
         //counts as falling edge
@@ -600,24 +713,8 @@ void loop(){
                 for(int i=0;i<sizeof(morse_code_keys)/sizeof(morse_code_keys[0]);i++){
                     if(pgm_read_byte(&morse_code_keys[i]) == charBuf){
                         char decoded = pgm_read_byte(&morse_code_chars[i]);
-                        if(decoded >= ' '){
-                            Serial.println(decoded);
-                        }
-                        else if(decoded == 0xA){
-                            Serial.println("LF");
-                        }
-                        else if(decoded == 0x6){
-                            Serial.println("ACK");
-                        }
-                        else if(decoded == 0x8){
-                            Serial.println("BS");
-                        }
-                        else if(decoded == 0){
-                            Serial.println("NULL");
-                        }
-                        else{
-                            Serial.println("EGG");
-                        }
+                        LCDPutChar(decoded);
+                        LCDRefresh();
                     }
                 }
 
@@ -632,9 +729,8 @@ void loop(){
         firstStart = false;
     }
 
-
-
     lastMainState = mainState;
+
 }
 
 
