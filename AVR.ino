@@ -23,6 +23,7 @@ right/down button 4
 piezos 11 10 9
 
 RGBLED: red 6 green 3 blue 5
+CAPSLOCKLED: 13
 */
 
 typedef struct{
@@ -52,6 +53,7 @@ RGB ledColor{255, 255, 0};
 RGB ledColor2{0, 255, 255};
 RGB ledColor3{255, 0, 0};
 const RGB ledPins{6, 3, 5};
+const uint8_t capslockledPin = 13;
 
 //runtime use
 uint32_t currTime;
@@ -61,6 +63,9 @@ uint32_t lastOnTime;
 uint32_t lastOffTime;
 uint32_t lastDisplayRefresh;
 bool firstStart = true; //if true make the first space not print
+bool shift = false;
+bool caps_lock = false;
+
 
 uint32_t dot_len;
 uint32_t dash_len;
@@ -71,6 +76,13 @@ uint8_t charBuf;
 char fileBuf[901] = {0}; //900 max for a file
 char displayBuf[2][17] = {{' '}}; //screen size + null terminator
 Vector2 displayPos = {0, 0};
+
+
+uint8_t menuIndex = 0;
+const char menuEntries[][17] = {
+    "1. freewrite    ",
+    "2. fuck you niko",
+};
 
 //modifiable settings
 const uint8_t wpm = 20;
@@ -247,7 +259,7 @@ const char morse_code_chars[] PROGMEM = {
 
     '5', //5.1 len
     '4',
-    0, //0s are null characters
+    '~', //0s are null characters
     '3',
     '<', //..-..
     '>', //..-.-
@@ -256,18 +268,18 @@ const char morse_code_chars[] PROGMEM = {
     '&',
     0,
     '+',
+    0x7, //shift .-.-- = 0x7 BEL
     0,
     0,
-    0,
-    0,
+    0x10, //caps lock .---. = 0x10 DLE
     '1',
 
     '6', //5.2 len
     '=',
     '/',
     0,
-    0,
-    0,
+    0xE, //left, -.-..
+    0xF, //right, -.-.-
     '(',
     0,
     '7',
@@ -297,7 +309,142 @@ const char morse_code_chars[] PROGMEM = {
     0,
     0,
     0,
-    '"',
+    '\"',
+    0,
+    0,
+    '.',
+    0,
+    0,
+    0,
+    0,
+    '@',
+    0,
+    0,
+    0,
+    '\'',
+    0,
+
+    0, //6.2 len
+    '-',
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    '!',
+    0,
+    ')',
+    0,
+    0,
+    0,
+    0,
+    0,
+    ',',
+    0,
+    0,
+    0,
+    0,
+    ':',
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+};
+const char morse_code_chars_upper[] PROGMEM = {
+    'E', //1 len
+    'T',
+
+    'I', //2 len
+    'A',
+    'N',
+    'M',
+
+    'S', //3 len
+    'U',
+    'R',
+    'W',
+    'D',
+    'K',
+    'G',
+    'O',
+
+    'H', //4 len
+    'V',
+    'F',
+    ' ', //space ..--
+    'L',
+    0xA, //enter .-.- = 0xA LF
+    'P',
+    'J',
+    'B',
+    'X',
+    'C',
+    'Y',
+    'Z',
+    'Q',
+    0x6, //exit/confirm ---. = 0x6 ACK
+    0x8, //backspace ---- = 0x8 BS
+
+    '5', //5.1 len
+    '4',
+    '~', //0s are null characters
+    '3',
+    '<', //..-..
+    '>', //..-.-
+    '^', //..--.
+    '2',
+    '&',
+    0,
+    '+',
+    0x7, //shift .-.-- = 0x7 BEL
+    0,
+    0,
+    0x10, //caps lock .---. = 0x10 DLE
+    '1',
+
+    '6', //5.2 len
+    '=',
+    '/',
+    0,
+    0xE, //left, -.-..
+    0xF, //right, -.-.-
+    '(',
+    0,
+    '7',
+    0,
+    0,
+    0,
+    '8',
+    0,
+    '9',
+    '0',
+
+    0, //6.1 len
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    '?',
+    0,
+    0,
+    0,
+    0,
+    0,
+    '\"',
     0,
     0,
     '.',
@@ -451,28 +598,6 @@ void LCDRefresh(){
 
 }
 
-/*
-if(decoded >= ' '){
-    Serial.println(decoded);
-}
-else if(decoded == 0xA){
-    Serial.println("LF");
-}
-else if(decoded == 0x6){
-    Serial.println("ACK");
-}
-else if(decoded == 0x8){
-    Serial.println("BS");
-}
-else if(decoded == 0){
-    Serial.println("NULL");
-}
-else{
-    Serial.println("EGG");
-}
-*/
-
-
 void LCDPutChar(char niko){
     char* target = &displayBuf[displayPos.y][displayPos.x];
     bool advance = true;
@@ -494,10 +619,24 @@ void LCDPutChar(char niko){
         bksp = true;
         advanceForwards = false;
     }
+    else if(niko == 0xE){ //left
+        advanceForwards = false;
+    }
+    else if(niko == 0xF){ //right
+
+    }
+    else if(niko == 0x7){ //shift
+        shift = true;
+        advance = false;
+    }
+    else if(niko == 0x10){ //caps lock
+        caps_lock = !caps_lock;
+        digitalWrite(capslockledPin, !caps_lock);
+        advance = false;
+    }
     else{
         *target = 'N';
     }
-
 
     //increment displaypos
     if(!advance){
@@ -526,6 +665,7 @@ void LCDPutChar(char niko){
             }
         }
         else{
+
             displayPos.x++;
         }
     }
@@ -548,6 +688,179 @@ void LCDPutChar(char niko){
         displayBuf[displayPos.y][displayPos.x] = ' '; //set to space
     }
 }
+//get single character
+char getch_(){
+    lastOnTime = millis();
+    lastOffTime = millis();
+
+    while(true){
+        bool mainState = !digitalRead(mainButtonPin);
+        bool upState = !digitalRead(upButtonPin);
+        bool downState = !digitalRead(downButtonPin);
+        currTime = millis();
+
+        if(mainState != lastMainState){
+            if(lastMainState){ //triggered falling edge
+
+                morse_code_output_off(piezo1Pin);
+
+                dt = currTime - lastOnTime; //time the button is on
+                if(dt > 3){
+                    if(dt < dot_thres){
+                        //only add if the buffer is not full, otherwise reset buffer
+                        if(charBuf & 0b1000000){ //full
+                            charBuf = 1; //reset
+                            Serial.println("RST");
+                            firstStart = true;
+                            morse_code_output_warning(piezo1Pin, piezoFreqs[2], ledColor3);
+                        }
+                        else{
+                            Serial.print("."); //add 0 to the char buffer
+                            charBuf <<= 1;
+                            charBuf |= 0;
+                        }
+                    }
+                    else{
+                        //only add if the buffer is not full, otherwise reset buffer
+                        if(charBuf & 0b1000000){ //full
+                            charBuf = 1; //reset
+                            Serial.println("RST");
+                            firstStart = true;
+                            morse_code_output_warning(piezo1Pin, piezoFreqs[2], ledColor3);
+                        }
+                        else{
+                            Serial.print("-"); //add 1 to the char buffer
+                            charBuf <<= 1;
+                            charBuf |= 1;
+                        }
+                    }
+                }
+                //start timing the non button press
+                lastOffTime = millis();
+            }
+            else{ //triggered rising edge
+                morse_code_output_on(piezo1Pin, piezoFreqs[0], ledColor);
+                //start timing the button press
+                lastOnTime = currTime;
+            }
+        }
+
+        if(upState){
+
+            //only add if the buffer is not full, otherwise reset buffer
+            if(charBuf & 0b1000000){ //full
+                charBuf = 1; //reset
+                Serial.println("RST");
+                firstStart = true;
+                morse_code_output_warning(piezo1Pin, piezoFreqs[2], ledColor3);
+            }
+            else{
+                Serial.print(".");
+                charBuf <<= 1;
+                charBuf |= 0;
+            }
+
+
+            morse_code_output_on(piezo2Pin, piezoFreqs[0], ledColor2);
+            delay(dot_len);
+
+            //counts as falling edge
+            //start timing the non button press
+            lastOffTime = millis();
+
+            morse_code_output_off(piezo2Pin);
+            delay(dot_len);
+            
+        }
+        if(downState){
+
+            //only add if the buffer is not full, otherwise reset buffer
+            if(charBuf & 0b1000000){ //full
+                charBuf = 1; //reset
+                Serial.println("RST");
+                firstStart = true;
+                morse_code_output_warning(piezo1Pin, piezoFreqs[2], ledColor3);
+            }
+            else{
+                Serial.print("-");
+                charBuf <<= 1;
+                charBuf |= 1;
+            }
+            
+            morse_code_output_on(piezo3Pin, piezoFreqs[1], ledColor2);
+            delay(dash_len);
+
+            //counts as falling edge
+            //start timing the non button press
+            lastOffTime = millis();
+
+            morse_code_output_off(piezo3Pin);
+            delay(dash_len);
+
+        }
+
+        //process the typed character
+        if(!upState && !downState && !mainState){
+            if(!firstStart){
+                dt = currTime - lastOffTime; //how much time the button is off
+                if(dt > inter_char_len && dt < inter_char_len * 2){
+                    Serial.print(" ");
+
+                    //get character from lookup table
+                    for(int i=0;i<sizeof(morse_code_keys)/sizeof(morse_code_keys[0]);i++){
+                        if(pgm_read_byte(&morse_code_keys[i]) == charBuf){
+                            //calculate if character should be uppercase or not
+                            bool upper = shift ^ caps_lock;
+                            shift = false; //reset shift
+
+                            char decoded = pgm_read_byte(((upper) ? &morse_code_chars_upper[i] : &morse_code_chars[i]));
+                            //reset character buffer as well as off time so space doesn't get printed infinitely
+                            charBuf = 1;
+                            lastOffTime = -inter_char_len * 3;
+                            return decoded;
+                        }
+                    }
+                    //reset character buffer as well as off time so space doesn't get printed infinitely
+                    charBuf = 1;
+                    lastOffTime = -inter_char_len * 3;
+                }
+            }
+        }
+        else{
+            //if something is pressed remove first start
+            firstStart = false;
+        }
+
+        lastMainState = mainState;
+    }
+}
+
+//function to freely write text to lcd, exits on 0x6, ---.
+void freewrite_(){
+    //make buffer empty
+    for(int i=0;i<2;i++){
+        memset(displayBuf[i], ' ', 16);
+    }
+    displayPos.x = 0;
+    displayPos.y = 0;
+    LCDRefresh();
+    while(true){
+        char typed = getch_();
+        if(typed == 0x6){
+            //exit freewrite
+            //reset display buffer
+            for(int i=0;i<2;i++){
+                memset(displayBuf[i], ' ', 16);
+            }
+            //refresh LCD again
+            LCDRefresh();
+            //return
+            return;
+        }
+        LCDPutChar(typed);
+        LCDRefresh();
+    }
+}
 
 void setup(){
     //morse code input and output
@@ -557,10 +870,12 @@ void setup(){
     pinMode(ledPins.red, OUTPUT);
     pinMode(ledPins.green, OUTPUT);
     pinMode(ledPins.blue, OUTPUT);
+    pinMode(capslockledPin, OUTPUT);
     pinMode(piezo1Pin, OUTPUT);
     pinMode(piezo2Pin, OUTPUT);
     pinMode(piezo3Pin, OUTPUT);
 
+    digitalWrite(capslockledPin, !caps_lock);
     Serial.begin(115200);
     lcd.begin(16, 2);
     lcd.blink();
@@ -581,154 +896,31 @@ void setup(){
 
     Serial.println("Nuck arduinOS");
     Serial.print("WPM: ");Serial.println(wpm);
-
+    Serial.print("EEPROM size: ");Serial.println(EEPROM.length());
 
     play_ringtone();
 
     lastOnTime = millis();
     lastOffTime = millis();
-    lastDisplayRefresh = millis();
 }
-
 void loop(){
+    shift = false;
+    caps_lock = false;
+    digitalWrite(capslockledPin, !caps_lock);
+    //show main menu
+    strncpy(displayBuf[0], "Nuck ArduinOS   ", 17);
+    //show current menu option
+    strncpy(displayBuf[1], menuEntries[menuIndex], 17);
 
-    bool mainState = !digitalRead(mainButtonPin);
-    bool upState = !digitalRead(upButtonPin);
-    bool downState = !digitalRead(downButtonPin);
-    currTime = millis();
-
-    if(mainState != lastMainState){
-        if(lastMainState){ //triggered falling edge
-            //start timing the non button press
-            lastOffTime = millis();
-
-            morse_code_output_off(piezo1Pin);
-
-
-            dt = currTime - lastOnTime; //time the button is on
-            if(dt > 3){
-                if(dt < dot_thres){
-                    //only add if the buffer is not full, otherwise reset buffer
-                    if(charBuf & 0b1000000){ //full
-                        charBuf = 1; //reset
-                        Serial.println("RST");
-                        firstStart = true;
-                        morse_code_output_warning(piezo1Pin, piezoFreqs[2], ledColor3);
-                    }
-                    else{
-                        Serial.print("."); //add 0 to the char buffer
-                        charBuf <<= 1;
-                        charBuf |= 0;
-                    }
-                }
-                else{
-                    //only add if the buffer is not full, otherwise reset buffer
-                    if(charBuf & 0b1000000){ //full
-                        charBuf = 1; //reset
-                        Serial.println("RST");
-                        firstStart = true;
-                        morse_code_output_warning(piezo1Pin, piezoFreqs[2], ledColor3);
-                    }
-                    else{
-                        Serial.print("-"); //add 1 to the char buffer
-                        charBuf <<= 1;
-                        charBuf |= 1;
-                    }
-                }
-            }
-        }
-        else{ //triggered rising edge
-            //start timing the button press
-            lastOnTime = currTime;
-
-
-            morse_code_output_on(piezo1Pin, piezoFreqs[0], ledColor);
-        }
+    displayPos = (Vector2){15, 1};
+    LCDRefresh();
+    Serial.println("getting character...");
+    char typed = getch_();
+    Serial.println(typed, HEX);
+    if(typed == 0x6){
+        Serial.println("freewrite!");
+        freewrite_();
     }
-
-    if(upState){
-
-        //only add if the buffer is not full, otherwise reset buffer
-        if(charBuf & 0b1000000){ //full
-            charBuf = 1; //reset
-            Serial.println("RST");
-            firstStart = true;
-            morse_code_output_warning(piezo1Pin, piezoFreqs[2], ledColor3);
-        }
-        else{
-            Serial.print(".");
-            charBuf <<= 1;
-            charBuf |= 0;
-        }
-
-
-        morse_code_output_on(piezo2Pin, piezoFreqs[0], ledColor2);
-        delay(dot_len);
-
-        //counts as falling edge
-        //start timing the non button press
-        lastOffTime = millis();
-
-        morse_code_output_off(piezo2Pin);
-        delay(dot_len);
-        
-    }
-    if(downState){
-
-        //only add if the buffer is not full, otherwise reset buffer
-        if(charBuf & 0b1000000){ //full
-            charBuf = 1; //reset
-            Serial.println("RST");
-            firstStart = true;
-            morse_code_output_warning(piezo1Pin, piezoFreqs[2], ledColor3);
-        }
-        else{
-            Serial.print("-");
-            charBuf <<= 1;
-            charBuf |= 1;
-        }
-        
-        morse_code_output_on(piezo3Pin, piezoFreqs[1], ledColor2);
-        delay(dash_len);
-
-        //counts as falling edge
-        //start timing the non button press
-        lastOffTime = millis();
-
-        morse_code_output_off(piezo3Pin);
-        delay(dash_len);
-
-    }
-
-
-    //print space if needed
-    if(!upState && !downState && !mainState){
-        if(!firstStart){
-            dt = currTime - lastOffTime; //how much time the button is off
-            if(dt > inter_char_len && dt < inter_char_len * 2){
-                Serial.print(" ");
-
-                //get character from lookup table
-                for(int i=0;i<sizeof(morse_code_keys)/sizeof(morse_code_keys[0]);i++){
-                    if(pgm_read_byte(&morse_code_keys[i]) == charBuf){
-                        char decoded = pgm_read_byte(&morse_code_chars[i]);
-                        LCDPutChar(decoded);
-                        LCDRefresh();
-                    }
-                }
-
-                //reset character buffer as well as off time so space doesn't get printed infinitely
-                charBuf = 1;
-                lastOffTime = -inter_char_len * 3;
-            }
-        }
-    }
-    else{
-        //if something is pressed remove first start
-        firstStart = false;
-    }
-
-    lastMainState = mainState;
 
 }
 
