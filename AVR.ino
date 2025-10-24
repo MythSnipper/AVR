@@ -231,9 +231,9 @@ const char morse_code_chars[] PROGMEM = {
     'h', //4 len
     'v',
     'f',
-    0xA, //enter ..-- = 0xA LF
+    ' ', //space ..--
     'l',
-    ' ', //space .-.-
+    0xA, //enter .-.- = 0xA LF
     'p',
     'j',
     'b',
@@ -249,9 +249,9 @@ const char morse_code_chars[] PROGMEM = {
     '4',
     0, //0s are null characters
     '3',
-    0,
-    0,
-    0,
+    '<', //..-..
+    '>', //..-.-
+    '^', //..--.
     '2',
     '&',
     0,
@@ -345,7 +345,6 @@ const char morse_code_chars[] PROGMEM = {
     0,
     0,
 };
-
 
 void morse_code_output_on(uint8_t piezo, uint32_t piezo_freq, RGB color){
     analogWrite(ledPins.red, 255-color.red);
