@@ -5,7 +5,7 @@
 //lcd screen
 LiquidCrystal lcd(12, 8, 14, 15, 16, 17);
 
-//wiring
+//wiring(may not be accurate, for lcd it is most likely accurate)
 /*
 VSS GND
 VDD 5V
@@ -36,6 +36,7 @@ typedef struct{
     uint8_t y;
 } Vector2;
 
+//modifiable pin settings
 //button configurations
 const uint8_t upButtonPin = 7;
 const uint8_t downButtonPin = 4;
@@ -46,7 +47,7 @@ const uint8_t piezo1Pin = 11;
 const uint8_t piezo2Pin = 10;
 const uint8_t piezo3Pin = 9;
 
-const uint16_t piezoFreqs[3] = {440, 660, 466};
+const uint16_t piezoFreqs[3] = {440, 660, 466}; //dot, dash, error
 
 //LED configurations
 RGB ledColor{255, 255, 0};
@@ -55,7 +56,9 @@ RGB ledColor3{255, 0, 0};
 const RGB ledPins{6, 3, 5};
 const uint8_t capslockledPin = 13;
 
-//runtime use
+
+
+//runtime use(do not modify)
 uint32_t currTime;
 uint32_t dt;
 bool lastMainState = !LOW;
@@ -65,8 +68,9 @@ uint32_t lastDisplayRefresh;
 bool firstStart = true; //if true make the first space not print
 bool shift = false;
 bool caps_lock = false;
+uint32_t EEPROM_size = 0;
 
-
+//morse code delays
 uint32_t dot_len;
 uint32_t dash_len;
 uint32_t dot_thres; //threshold, if ms below this it is considered to be a dot, otherwise dash
@@ -74,18 +78,24 @@ uint32_t inter_char_len;
 
 uint8_t charBuf;
 char fileBuf[901] = {0}; //900 max for a file
-char displayBuf[2][17] = {{' '}}; //screen size + null terminator
-Vector2 displayPos = {0, 0};
 
+//memory map to the lcd screen(kinda, by using software to update)
+char displayBuf[2][17] = {
+    "                ",
+    "                "
+}; //screen size + null terminator
+Vector2 displayPos = {0, 0}; //cursor position on the lcd
 
 uint8_t menuIndex = 0;
 const char menuEntries[][17] = {
     "1. freewrite    ",
-    "2. fuck you niko",
+    "2. EEPROM check ",
 };
 
 //modifiable settings
-const uint8_t wpm = 20;
+const uint8_t wpm = 15;
+
+
 
 //lookup table
 const uint8_t morse_code_keys[] PROGMEM = {
@@ -599,20 +609,20 @@ void LCDRefresh(){
 }
 
 void LCDPutChar(char niko){
-    char* target = &displayBuf[displayPos.y][displayPos.x];
-    bool advance = true;
-    bool advanceForwards = true;
+    bool advance = true; //move the cursor?
+    bool advanceForwards = true; //move the cursor forwards or backwards?
+    //special keys
     bool bksp = false;
     bool line_feed = false;
     //print as displaypos
     if(niko >= ' '){
-        *target = niko;
+        displayBuf[displayPos.y][displayPos.x] = niko;
     }
     else if(niko == 0xA){ //LF ..--
         line_feed = true;
     }
     else if(niko == 0x6){ //ACK ---.
-        *target = 'A';
+        displayBuf[displayPos.y][displayPos.x] = 'A';
     }
     else if(niko == 0x8){ //BS .-.-
         //backspace
@@ -627,15 +637,16 @@ void LCDPutChar(char niko){
     }
     else if(niko == 0x7){ //shift
         shift = true;
+        updateCapslock();
         advance = false;
     }
     else if(niko == 0x10){ //caps lock
         caps_lock = !caps_lock;
-        digitalWrite(capslockledPin, !caps_lock);
+        updateCapslock();
         advance = false;
     }
     else{
-        *target = 'N';
+
     }
 
     //increment displaypos
@@ -837,15 +848,15 @@ char getch_(){
 
 //function to freely write text to lcd, exits on 0x6, ---.
 void freewrite_(){
-    //make buffer empty
+    //make screen empty
     for(int i=0;i<2;i++){
         memset(displayBuf[i], ' ', 16);
     }
-    displayPos.x = 0;
-    displayPos.y = 0;
-    LCDRefresh();
+    displayPos = (Vector2){0, 0}; //reset displaypos to home
+    LCDRefresh(); //update lcd
+
     while(true){
-        char typed = getch_();
+        char typed = getch_(); //get char
         if(typed == 0x6){
             //exit freewrite
             //reset display buffer
@@ -857,9 +868,13 @@ void freewrite_(){
             //return
             return;
         }
-        LCDPutChar(typed);
-        LCDRefresh();
+        LCDPutChar(typed); //put the char
+        LCDRefresh(); //and update
     }
+}
+
+void updateCapslock(){
+    digitalWrite(capslockledPin, !(shift ^ caps_lock));
 }
 
 void setup(){
@@ -885,6 +900,8 @@ void setup(){
     dash_len = 3 * dot_len;
     dot_thres = 1.8 * dot_len;
     inter_char_len = 4 * dot_len;
+    
+    EEPROM_size = EEPROM.length();
 
     charBuf = 1;
     firstStart = true;
@@ -894,9 +911,9 @@ void setup(){
         displayBuf[i][16] = 0;
     }
 
-    Serial.println("Nuck arduinOS");
-    Serial.print("WPM: ");Serial.println(wpm);
-    Serial.print("EEPROM size: ");Serial.println(EEPROM.length());
+    Serial.println(F("Nuck arduinOS"));
+    Serial.print(F("WPM: "));Serial.println(wpm);
+    Serial.print(F("EEPROM size: "));Serial.println(EEPROM_size);
 
     play_ringtone();
 
@@ -906,21 +923,32 @@ void setup(){
 void loop(){
     shift = false;
     caps_lock = false;
-    digitalWrite(capslockledPin, !caps_lock);
+    updateCapslock();
     //show main menu
-    strncpy(displayBuf[0], "Nuck ArduinOS   ", 17);
+    strncpy(displayBuf[0], F("Nuck ArduinOS   "), 17);
     //show current menu option
     strncpy(displayBuf[1], menuEntries[menuIndex], 17);
 
     displayPos = (Vector2){15, 1};
     LCDRefresh();
-    Serial.println("getting character...");
+    Serial.println(F("getting character..."));
     char typed = getch_();
-    Serial.println(typed, HEX);
-    if(typed == 0x6){
-        Serial.println("freewrite!");
-        freewrite_();
+    switch(typed){
+        case 0x6: { //exit/confirm
+            Serial.println(F("freewrite"));
+            freewrite_();
+        }
+        case 0xE: { //move left
+            
+        }
+        case 0xF: { //move right
+
+        }
+        default: {
+
+        }
     }
+
 
 }
 
