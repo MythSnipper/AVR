@@ -35,7 +35,14 @@ typedef struct{
     uint8_t x;
     uint8_t y;
 } Vector2;
+typedef struct __attribute__((packed)){
+    uint32_t EEPROM_size = 0;
+    char filesystem_signature[8];
+    uint8_t firestarter = 0xE;
+    
 
+
+} EEPROM_Info;
 //modifiable pin settings
 //button configurations
 const uint8_t upButtonPin = 7;
@@ -68,7 +75,7 @@ uint32_t lastDisplayRefresh;
 bool firstStart = true; //if true make the first space not print
 bool shift = false;
 bool caps_lock = false;
-uint32_t EEPROM_size = 0;
+
 
 //morse code delays
 uint32_t dot_len;
@@ -77,7 +84,8 @@ uint32_t dot_thres; //threshold, if ms below this it is considered to be a dot, 
 uint32_t inter_char_len;
 
 uint8_t charBuf;
-char fileBuf[901] = {0}; //900 max for a file
+char fileBuf[1025] = {0}; //1024 max for a file + null terminator
+
 
 //memory map to the lcd screen(kinda, by using software to update)
 char displayBuf[2][17] = {
@@ -94,8 +102,6 @@ const char menuEntries[][17] = {
 
 //modifiable settings
 const uint8_t wpm = 15;
-
-
 
 //lookup table
 const uint8_t morse_code_keys[] PROGMEM = {
@@ -667,9 +673,9 @@ void LCDPutChar(char niko){
                     if(displayBuf[1][i] != ' '){
                         line2_empty = false;
                     }
-                    displayBuf[0][i] = displayBuf[1][i];
-                    displayBuf[1][i] = ' ';
                 }
+                strncpy(displayBuf[0], displayBuf[1], 16);
+
                 if(line2_empty){
                     displayPos.y = 0;
                 }
@@ -699,6 +705,7 @@ void LCDPutChar(char niko){
         displayBuf[displayPos.y][displayPos.x] = ' '; //set to space
     }
 }
+
 //get single character
 char getch_(){
     lastOnTime = millis();
@@ -877,6 +884,20 @@ void updateCapslock(){
     digitalWrite(capslockledPin, !(shift ^ caps_lock));
 }
 
+void eeprom_check_(){
+
+
+
+}
+void eeprom_display_info_(){
+
+
+
+
+}
+
+
+
 void setup(){
     //morse code input and output
     pinMode(upButtonPin, INPUT_PULLUP);
@@ -906,11 +927,6 @@ void setup(){
     charBuf = 1;
     firstStart = true;
 
-    //just put the null terminators in the bag lil bro
-    for(int i=0;i<2;i++){
-        displayBuf[i][16] = 0;
-    }
-
     Serial.println(F("Nuck arduinOS"));
     Serial.print(F("WPM: "));Serial.println(wpm);
     Serial.print(F("EEPROM size: "));Serial.println(EEPROM_size);
@@ -919,13 +935,15 @@ void setup(){
 
     lastOnTime = millis();
     lastOffTime = millis();
+
+
 }
 void loop(){
     shift = false;
     caps_lock = false;
     updateCapslock();
     //show main menu
-    strncpy(displayBuf[0], F("Nuck ArduinOS   "), 17);
+    strncpy(displayBuf[0], "Nuck ArduinOS   ", 17);
     //show current menu option
     strncpy(displayBuf[1], menuEntries[menuIndex], 17);
 
@@ -935,14 +953,34 @@ void loop(){
     char typed = getch_();
     switch(typed){
         case 0x6: { //exit/confirm
-            Serial.println(F("freewrite"));
-            freewrite_();
+            switch(menuIndex){
+                case 0: {
+                    Serial.println(F("freewrite"));
+                    freewrite_();
+                    break;
+                }
+                case 1: {
+                    Serial.println(F("EEPROM recheck"));
+                    eeprom_check_();
+                    eeprom_display_info_();
+                    break;
+                }
+                default: {
+                    Serial.println(F("Invalid menuIndex"));
+                    break;
+                }
+            }
+            break;
         }
         case 0xE: { //move left
-            
+            menuIndex = (menuIndex == 0) ? (sizeof(menuEntries)/sizeof(menuEntries[0])-1) : menuIndex-1;
+            break;
         }
         case 0xF: { //move right
-
+            menuIndex = (menuIndex == (sizeof(menuEntries)/sizeof(menuEntries[0])-1)) ? 0 : menuIndex+1;
+                //leo typed this btw
+                //UWU~~~f
+            break;
         }
         default: {
 
