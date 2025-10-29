@@ -61,7 +61,9 @@ const uint8_t ledPins[] = {3, 6, 5, 7};
 
 //runtime use(do not modify)
 uint32_t currTime, dt;
-bool lastMainState = !LOW;
+bool lastMainState = LOW;
+bool lastUpState = LOW;
+bool lastDownState = LOW;
 uint32_t lastOnTime, lastOffTime;
 bool firstStart = true; //if true make the first space not print
 bool shift = false;
@@ -89,7 +91,8 @@ Vector2 displayPos = {0, 0}; //cursor position on the lcd
 uint8_t menuIndex = 0;
 const char menuEntries[][17] = {
     "1. freewrite    ",
-    "2. EEPROM check ",
+    "2. EEPROM info  ",
+    "3. fuck you niko",
 };
 
 //modifiable settings
@@ -519,7 +522,7 @@ void morse_code_output_warning(uint8_t piezo, uint32_t piezo_freq, RGB color){
     morse_code_output_off(piezo);
     delay(10);
     morse_code_output_on(piezo, piezo_freq, color);
-    delay(350);
+    delay(700);
     morse_code_output_off(piezo);
     delay(10);
 }
@@ -737,58 +740,13 @@ char getch_(){
             }
         }
 
-        if(upState){
-
-            //only add if the buffer is not full, otherwise reset buffer
-            if(charBuf & 0b1000000){ //full
-                charBuf = 1; //reset
-                Serial.println("RST");
-                firstStart = true;
-                morse_code_output_warning(piezoPins[0], piezoFreqs[2], ledColors[2]);
-            }
-            else{
-                Serial.print(".");
-                charBuf <<= 1;
-                charBuf |= 0;
-            }
-
-
-            morse_code_output_on(piezoPins[1], piezoFreqs[0], ledColors[1]);
-            delay(dot_len);
-
-            //counts as falling edge
-            //start timing the non button press
-            lastOffTime = millis();
-
-            morse_code_output_off(piezoPins[1]);
-            delay(dot_len);
-            
+        if(upState != lastUpState && lastUpState){
+            lastUpState = upState;
+            return 0xE;
         }
-        if(downState){
-
-            //only add if the buffer is not full, otherwise reset buffer
-            if(charBuf & 0b1000000){ //full
-                charBuf = 1; //reset
-                Serial.println("RST");
-                firstStart = true;
-                morse_code_output_warning(piezoPins[0], piezoFreqs[2], ledColors[2]);
-            }
-            else{
-                Serial.print("-");
-                charBuf <<= 1;
-                charBuf |= 1;
-            }
-            
-            morse_code_output_on(piezoPins[2], piezoFreqs[1], ledColors[1]);
-            delay(dash_len);
-
-            //counts as falling edge
-            //start timing the non button press
-            lastOffTime = millis();
-
-            morse_code_output_off(piezoPins[2]);
-            delay(dash_len);
-
+        if(downState != lastDownState && lastDownState){
+            lastDownState = downState;
+            return 0xF;
         }
 
         //process the typed character
@@ -824,6 +782,8 @@ char getch_(){
         }
 
         lastMainState = mainState;
+        lastUpState = upState;
+        lastDownState = downState;
     }
 }
 
@@ -931,15 +891,15 @@ void setup(){
     digitalWrite(ledPins[0], 0);
     digitalWrite(ledPins[1], 1);
     digitalWrite(ledPins[2], 1);
-    delay(2000);
+    delay(300);
     digitalWrite(ledPins[0], 1);
     digitalWrite(ledPins[1], 0);
     digitalWrite(ledPins[2], 1);
-    delay(2000);
+    delay(300);
     digitalWrite(ledPins[0], 1);
     digitalWrite(ledPins[1], 1);
     digitalWrite(ledPins[2], 0);
-    delay(2000);
+    delay(300);
 
     digitalWrite(ledPins[3], !caps_lock);
     Serial.begin(115200);
@@ -1004,12 +964,19 @@ void loop(){
         }
         case 0xE: { //move left
             menuIndex = (menuIndex == 0) ? (sizeof(menuEntries)/sizeof(menuEntries[0])-1) : menuIndex-1;
+            morse_code_output_on(piezoPins[0], piezoFreqs[1], ledColors[1]);
+            delay(300);
+            morse_code_output_off(piezoPins[0]);
             break;
         }
         case 0xF: { //move right
+            
             menuIndex = (menuIndex == (sizeof(menuEntries)/sizeof(menuEntries[0])-1)) ? 0 : menuIndex+1;
                 //leo typed this btw
                 //UWU~~~f
+            morse_code_output_on(piezoPins[0], piezoFreqs[1], ledColors[1]);
+            delay(300);
+            morse_code_output_off(piezoPins[0]);
             break;
         }
         default: {
