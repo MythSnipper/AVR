@@ -48,26 +48,21 @@ const uint8_t downButtonPin = 4;
 const uint8_t mainButtonPin = 2;
 
 //piezo configurations
-const uint8_t piezo1Pin = 11;
-const uint8_t piezo2Pin = 10;
-const uint8_t piezo3Pin = 9;
-
+const uint8_t piezoPins[3] = {11, 10, 9};
 const uint16_t piezoFreqs[3] = {440, 660, 466}; //dot, dash, error
 
 //LED configurations
-RGB ledColor{255, 255, 0};
-RGB ledColor2{0, 255, 255};
-RGB ledColor3{255, 0, 0};
-const RGB ledPins{3, 6, 5};
-const uint8_t capslockledPin = 7;
+const RGB ledColors[3] = {
+    {255, 255, 0},
+    {0, 255, 255},
+    {255, 0, 0}
+};
+const uint8_t ledPins[] = {3, 6, 5, 7};
 
 //runtime use(do not modify)
-uint32_t currTime;
-uint32_t dt;
+uint32_t currTime, dt;
 bool lastMainState = !LOW;
-uint32_t lastOnTime;
-uint32_t lastOffTime;
-uint32_t lastDisplayRefresh;
+uint32_t lastOnTime, lastOffTime;
 bool firstStart = true; //if true make the first space not print
 bool shift = false;
 bool caps_lock = false;
@@ -507,15 +502,15 @@ const char morse_code_chars_upper[] PROGMEM = {
 };
 
 void morse_code_output_on(uint8_t piezo, uint32_t piezo_freq, RGB color){
-    analogWrite(ledPins.red, 255-color.red);
-    analogWrite(ledPins.green, 255-color.green);
-    analogWrite(ledPins.blue, 255-color.blue);
+    analogWrite(ledPins[0], 255-color.red);
+    analogWrite(ledPins[1], 255-color.green);
+    analogWrite(ledPins[2], 255-color.blue);
     tone(piezo, piezo_freq);
 }
 void morse_code_output_off(uint8_t piezo){
-    analogWrite(ledPins.red, 255);
-    analogWrite(ledPins.green, 255);
-    analogWrite(ledPins.blue, 255);
+    analogWrite(ledPins[0], 255);
+    analogWrite(ledPins[1], 255);
+    analogWrite(ledPins[2], 255);
     noTone(piezo);
 }
 void morse_code_output_warning(uint8_t piezo, uint32_t piezo_freq, RGB color){
@@ -529,77 +524,59 @@ void morse_code_output_warning(uint8_t piezo, uint32_t piezo_freq, RGB color){
     delay(10);
 }
 void play_ringtone(){
-/*
-    morse_code_output_on(piezo1Pin, 311, ledColor);
-    delay(100);
-    morse_code_output_off(piezo1Pin);
-    delay(5);
-    morse_code_output_on(piezo2Pin, 391, ledColor);
-    delay(100);
-    morse_code_output_off(piezo2Pin);
-    delay(5);
-    morse_code_output_on(piezo3Pin, 466, ledColor);
-    delay(100);
-    morse_code_output_off(piezo3Pin);
-    delay(5);
-    morse_code_output_on(piezo1Pin, 622, ledColor);
-    delay(100);
-    morse_code_output_off(piezo1Pin);
-    delay(5);
-*/
 
-    morse_code_output_on(piezo3Pin, 622, ledColor);
+    morse_code_output_on(piezoPins[2], 622, ledColors[0]);
     int a = millis();
     const int e = 3150;
     while(millis() - a < 60){
-        digitalWrite(piezo1Pin, HIGH);
-        digitalWrite(piezo2Pin, HIGH);
+        digitalWrite(piezoPins[0], HIGH);
+        digitalWrite(piezoPins[1], HIGH);
         delayMicroseconds(0.333*e);
-        digitalWrite(piezo1Pin, LOW);
+        digitalWrite(piezoPins[0], LOW);
         delayMicroseconds(0.167*e);
-        digitalWrite(piezo2Pin, LOW);
+        digitalWrite(piezoPins[1], LOW);
         delayMicroseconds(0.166*e);
-        digitalWrite(piezo1Pin, HIGH);
+        digitalWrite(piezoPins[0], HIGH);
         delayMicroseconds(0.334*e);
 
-        digitalWrite(piezo1Pin, LOW);
-        digitalWrite(piezo2Pin, HIGH);
+        digitalWrite(piezoPins[0], LOW);
+        digitalWrite(piezoPins[1], HIGH);
         delayMicroseconds(0.333*e);
-        digitalWrite(piezo1Pin, HIGH);
+        digitalWrite(piezoPins[0], HIGH);
         delayMicroseconds(0.167*e);
-        digitalWrite(piezo2Pin, LOW);
+        digitalWrite(piezoPins[1], LOW);
         delayMicroseconds(0.166*e);
-        digitalWrite(piezo1Pin, LOW);
+        digitalWrite(piezoPins[0], LOW);
         delayMicroseconds(0.334*e);
         
     }
-    morse_code_output_off(piezo3Pin);
+    morse_code_output_off(piezoPins[2]);
     delay(50);
-    morse_code_output_on(piezo3Pin, 622, ledColor2);
+    morse_code_output_on(piezoPins[2], 622, ledColors[1]);
     a = millis();
     while(millis() - a < 200){
-        digitalWrite(piezo1Pin, HIGH);
-        digitalWrite(piezo2Pin, HIGH);
+        digitalWrite(piezoPins[0], HIGH);
+        digitalWrite(piezoPins[1], HIGH);
         delayMicroseconds(0.333*e);
-        digitalWrite(piezo1Pin, LOW);
+        digitalWrite(piezoPins[0], LOW);
         delayMicroseconds(0.167*e);
-        digitalWrite(piezo2Pin, LOW);
+        digitalWrite(piezoPins[1], LOW);
         delayMicroseconds(0.166*e);
-        digitalWrite(piezo1Pin, HIGH);
+        digitalWrite(piezoPins[0], HIGH);
         delayMicroseconds(0.334*e);
 
-        digitalWrite(piezo1Pin, LOW);
-        digitalWrite(piezo2Pin, HIGH);
+        digitalWrite(piezoPins[0], LOW);
+        digitalWrite(piezoPins[1], HIGH);
         delayMicroseconds(0.333*e);
-        digitalWrite(piezo1Pin, HIGH);
+        digitalWrite(piezoPins[0], HIGH);
         delayMicroseconds(0.167*e);
-        digitalWrite(piezo2Pin, LOW);
+        digitalWrite(piezoPins[1], LOW);
         delayMicroseconds(0.166*e);
-        digitalWrite(piezo1Pin, LOW);
+        digitalWrite(piezoPins[0], LOW);
         delayMicroseconds(0.334*e);
         
     }
-    morse_code_output_off(piezo3Pin);
+    morse_code_output_off(piezoPins[2]);
 }
 
 void LCDRefresh(){
@@ -717,7 +694,7 @@ char getch_(){
         if(mainState != lastMainState){
             if(lastMainState){ //triggered falling edge
 
-                morse_code_output_off(piezo1Pin);
+                morse_code_output_off(piezoPins[0]);
 
                 dt = currTime - lastOnTime; //time the button is on
                 if(dt > 3){
@@ -727,7 +704,7 @@ char getch_(){
                             charBuf = 1; //reset
                             Serial.println("RST");
                             firstStart = true;
-                            morse_code_output_warning(piezo1Pin, piezoFreqs[2], ledColor3);
+                            morse_code_output_warning(piezoPins[0], piezoFreqs[2], ledColors[2]);
                         }
                         else{
                             Serial.print("."); //add 0 to the char buffer
@@ -741,7 +718,7 @@ char getch_(){
                             charBuf = 1; //reset
                             Serial.println("RST");
                             firstStart = true;
-                            morse_code_output_warning(piezo1Pin, piezoFreqs[2], ledColor3);
+                            morse_code_output_warning(piezoPins[0], piezoFreqs[2], ledColors[2]);
                         }
                         else{
                             Serial.print("-"); //add 1 to the char buffer
@@ -754,7 +731,7 @@ char getch_(){
                 lastOffTime = millis();
             }
             else{ //triggered rising edge
-                morse_code_output_on(piezo1Pin, piezoFreqs[0], ledColor);
+                morse_code_output_on(piezoPins[0], piezoFreqs[0], ledColors[0]);
                 //start timing the button press
                 lastOnTime = currTime;
             }
@@ -767,7 +744,7 @@ char getch_(){
                 charBuf = 1; //reset
                 Serial.println("RST");
                 firstStart = true;
-                morse_code_output_warning(piezo1Pin, piezoFreqs[2], ledColor3);
+                morse_code_output_warning(piezoPins[0], piezoFreqs[2], ledColors[2]);
             }
             else{
                 Serial.print(".");
@@ -776,14 +753,14 @@ char getch_(){
             }
 
 
-            morse_code_output_on(piezo2Pin, piezoFreqs[0], ledColor2);
+            morse_code_output_on(piezoPins[1], piezoFreqs[0], ledColors[1]);
             delay(dot_len);
 
             //counts as falling edge
             //start timing the non button press
             lastOffTime = millis();
 
-            morse_code_output_off(piezo2Pin);
+            morse_code_output_off(piezoPins[1]);
             delay(dot_len);
             
         }
@@ -794,7 +771,7 @@ char getch_(){
                 charBuf = 1; //reset
                 Serial.println("RST");
                 firstStart = true;
-                morse_code_output_warning(piezo1Pin, piezoFreqs[2], ledColor3);
+                morse_code_output_warning(piezoPins[0], piezoFreqs[2], ledColors[2]);
             }
             else{
                 Serial.print("-");
@@ -802,14 +779,14 @@ char getch_(){
                 charBuf |= 1;
             }
             
-            morse_code_output_on(piezo3Pin, piezoFreqs[1], ledColor2);
+            morse_code_output_on(piezoPins[2], piezoFreqs[1], ledColors[1]);
             delay(dash_len);
 
             //counts as falling edge
             //start timing the non button press
             lastOffTime = millis();
 
-            morse_code_output_off(piezo3Pin);
+            morse_code_output_off(piezoPins[2]);
             delay(dash_len);
 
         }
@@ -878,7 +855,7 @@ void freewrite_(){
 }
 
 void updateCapslock(){
-    digitalWrite(capslockledPin, !(shift ^ caps_lock));
+    digitalWrite(ledPins[3], !(shift ^ caps_lock));
 }
 
 void eeprom_check_(){
@@ -891,7 +868,7 @@ void eeprom_display_info_(){
     caps_lock = false;
     updateCapslock();
     //show main menu
-    strncpy(displayBuf[0], "Nuck ArduinOS   ", 17);
+    strncpy(displayBuf[0], "EEPROM info:    ", 17);
     //show current menu option
     strncpy(displayBuf[1], menuEntries[menuIndex], 17);
 
@@ -943,28 +920,28 @@ void setup(){
     pinMode(upButtonPin, INPUT_PULLUP);
     pinMode(downButtonPin, INPUT_PULLUP);
     pinMode(mainButtonPin, INPUT_PULLUP);
-    pinMode(ledPins.red, OUTPUT);
-    pinMode(ledPins.green, OUTPUT);
-    pinMode(ledPins.blue, OUTPUT);
-    pinMode(capslockledPin, OUTPUT);
-    pinMode(piezo1Pin, OUTPUT);
-    pinMode(piezo2Pin, OUTPUT);
-    pinMode(piezo3Pin, OUTPUT);
+    pinMode(ledPins[0], OUTPUT);
+    pinMode(ledPins[1], OUTPUT);
+    pinMode(ledPins[2], OUTPUT);
+    pinMode(ledPins[3], OUTPUT);
+    pinMode(piezoPins[0], OUTPUT);
+    pinMode(piezoPins[1], OUTPUT);
+    pinMode(piezoPins[2], OUTPUT);
 
-    digitalWrite(ledPins.red, 0);
-    digitalWrite(ledPins.green, 1);
-    digitalWrite(ledPins.blue, 1);
+    digitalWrite(ledPins[0], 0);
+    digitalWrite(ledPins[1], 1);
+    digitalWrite(ledPins[2], 1);
     delay(2000);
-    digitalWrite(ledPins.red, 1);
-    digitalWrite(ledPins.green, 0);
-    digitalWrite(ledPins.blue, 1);
+    digitalWrite(ledPins[0], 1);
+    digitalWrite(ledPins[1], 0);
+    digitalWrite(ledPins[2], 1);
     delay(2000);
-    digitalWrite(ledPins.red, 1);
-    digitalWrite(ledPins.green, 1);
-    digitalWrite(ledPins.blue, 0);
+    digitalWrite(ledPins[0], 1);
+    digitalWrite(ledPins[1], 1);
+    digitalWrite(ledPins[2], 0);
     delay(2000);
 
-    digitalWrite(capslockledPin, !caps_lock);
+    digitalWrite(ledPins[3], !caps_lock);
     Serial.begin(115200);
     lcd.begin(16, 2);
     lcd.blink();
