@@ -3,27 +3,27 @@
 
 
 //lcd screen
-LiquidCrystal lcd(12, 8, 14, 15, 16, 17);
+LiquidCrystal lcd(13, 12, 14, 15, 16, 17);
 
 //wiring(may not be accurate, for lcd it is most likely accurate)
 /*
 VSS GND
 VDD 5V
 VO potentiometer middle
-RS 12
+RS 13
 RW GND
-E 8
+E 12
 D4-7 A0-A3
 A(LED+) 5V+330Ω resistor
 K(LED-) GND
 
 main button 2
-left/up button 7
+left/up button 8
 right/down button 4
 piezos 11 10 9
 
-RGBLED: red 6 green 3 blue 5
-CAPSLOCKLED: 13
+RGBLED(longest pin is ground): 3, GND, 5, 6
+CAPSLOCKLED: 7
 */
 
 typedef struct{
@@ -35,17 +35,15 @@ typedef struct{
     uint8_t x;
     uint8_t y;
 } Vector2;
-typedef struct __attribute__((packed)){
+typedef struct{
     uint32_t EEPROM_size = 0;
     char filesystem_signature[8];
     uint8_t firestarter = 0xE;
     
-
-
 } EEPROM_Info;
 //modifiable pin settings
 //button configurations
-const uint8_t upButtonPin = 7;
+const uint8_t upButtonPin = 8;
 const uint8_t downButtonPin = 4;
 const uint8_t mainButtonPin = 2;
 
@@ -60,10 +58,8 @@ const uint16_t piezoFreqs[3] = {440, 660, 466}; //dot, dash, error
 RGB ledColor{255, 255, 0};
 RGB ledColor2{0, 255, 255};
 RGB ledColor3{255, 0, 0};
-const RGB ledPins{6, 3, 5};
-const uint8_t capslockledPin = 13;
-
-
+const RGB ledPins{3, 6, 5};
+const uint8_t capslockledPin = 7;
 
 //runtime use(do not modify)
 uint32_t currTime;
@@ -76,6 +72,7 @@ bool firstStart = true; //if true make the first space not print
 bool shift = false;
 bool caps_lock = false;
 
+EEPROM_Info rom;
 
 //morse code delays
 uint32_t dot_len;
@@ -890,10 +887,53 @@ void eeprom_check_(){
 
 }
 void eeprom_display_info_(){
+    shift = false;
+    caps_lock = false;
+    updateCapslock();
+    //show main menu
+    strncpy(displayBuf[0], "Nuck ArduinOS   ", 17);
+    //show current menu option
+    strncpy(displayBuf[1], menuEntries[menuIndex], 17);
 
+    displayPos = (Vector2){15, 1};
+    LCDRefresh();
+    Serial.println(F("getting character..."));
+    char typed = getch_();
+    switch(typed){
+        case 0x6: { //exit/confirm
+            switch(menuIndex){
+                case 0: {
+                    Serial.println(F("freewrite"));
+                    freewrite_();
+                    break;
+                }
+                case 1: {
+                    Serial.println(F("EEPROM recheck"));
+                    eeprom_check_();
+                    eeprom_display_info_();
+                    break;
+                }
+                default: {
+                    Serial.println(F("Invalid menuIndex"));
+                    break;
+                }
+            }
+            break;
+        }
+        case 0xE: { //move left
+            menuIndex = (menuIndex == 0) ? (sizeof(menuEntries)/sizeof(menuEntries[0])-1) : menuIndex-1;
+            break;
+        }
+        case 0xF: { //move right
+            menuIndex = (menuIndex == (sizeof(menuEntries)/sizeof(menuEntries[0])-1)) ? 0 : menuIndex+1;
+                //leo typed this btw
+                //UWU~~~f
+            break;
+        }
+        default: {
 
-
-
+        }
+    }
 }
 
 
@@ -911,6 +951,19 @@ void setup(){
     pinMode(piezo2Pin, OUTPUT);
     pinMode(piezo3Pin, OUTPUT);
 
+    digitalWrite(ledPins.red, 0);
+    digitalWrite(ledPins.green, 1);
+    digitalWrite(ledPins.blue, 1);
+    delay(2000);
+    digitalWrite(ledPins.red, 1);
+    digitalWrite(ledPins.green, 0);
+    digitalWrite(ledPins.blue, 1);
+    delay(2000);
+    digitalWrite(ledPins.red, 1);
+    digitalWrite(ledPins.green, 1);
+    digitalWrite(ledPins.blue, 0);
+    delay(2000);
+
     digitalWrite(capslockledPin, !caps_lock);
     Serial.begin(115200);
     lcd.begin(16, 2);
@@ -922,14 +975,14 @@ void setup(){
     dot_thres = 1.8 * dot_len;
     inter_char_len = 4 * dot_len;
     
-    EEPROM_size = EEPROM.length();
+    rom.EEPROM_size = EEPROM.length();
 
     charBuf = 1;
     firstStart = true;
 
     Serial.println(F("Nuck arduinOS"));
     Serial.print(F("WPM: "));Serial.println(wpm);
-    Serial.print(F("EEPROM size: "));Serial.println(EEPROM_size);
+    Serial.print(F("EEPROM size: "));Serial.println(rom.EEPROM_size);
 
     play_ringtone();
 
