@@ -20,7 +20,8 @@ K(LED-) GND
 main button 2
 left/up button 8
 right/down button 4
-piezos 11 10 9
+capslockbutton 9
+piezos 11 10
 
 RGBLED(longest pin is ground): 3, GND, 5, 6
 CAPSLOCKLED: 7
@@ -37,22 +38,32 @@ typedef struct{
 } Vector2;
 typedef struct{
     uint32_t EEPROM_size = 0;
-    char filesystem_signature[8];
-    uint8_t firestarter = 0xE;
+    //eeprom metadata
+    uint8_t signature[2];
+    uint8_t version[2];
+    uint8_t formatted;
+    uint8_t corrupted;
+
+    //settings from eeprom
+    uint8_t wpm;
+    RGB ledColors[3];
+    uint16_t piezoFreqs[3];
     
+    uint8_t fsStartAddr;
 } EEPROM_Info;
 //modifiable pin settings
 //button configurations
 const uint8_t upButtonPin = 8;
 const uint8_t downButtonPin = 4;
 const uint8_t mainButtonPin = 2;
+const uint8_t capslockButtonPin = 9;
 
 //piezo configurations
-const uint8_t piezoPins[3] = {11, 10, 9};
+const uint8_t piezoPins[3] = {11, 10};
 const uint16_t piezoFreqs[3] = {440, 660, 466}; //dot, dash, error
 
 //LED configurations
-const RGB ledColors[3] = {
+RGB ledColors[3] = {
     {255, 255, 0},
     {0, 255, 255},
     {255, 0, 0}
@@ -64,6 +75,7 @@ uint32_t currTime, dt;
 bool lastMainState = LOW;
 bool lastUpState = LOW;
 bool lastDownState = LOW;
+bool lastCapslockState = LOW;
 uint32_t lastOnTime, lastOffTime;
 bool firstStart = true; //if true make the first space not print
 bool shift = false;
@@ -96,7 +108,7 @@ const char menuEntries[][17] = {
 };
 
 //modifiable settings
-const uint8_t wpm = 15;
+uint8_t wpm = 15;
 
 //lookup table
 const uint8_t morse_code_keys[] PROGMEM = {
@@ -528,7 +540,7 @@ void morse_code_output_warning(uint8_t piezo, uint32_t piezo_freq, RGB color){
 }
 void play_ringtone(){
 
-    morse_code_output_on(piezoPins[2], 622, ledColors[0]);
+    morse_code_output_on(piezoPins[1], 622, ledColors[0]);
     int a = millis();
     const int e = 3150;
     while(millis() - a < 60){
@@ -553,9 +565,9 @@ void play_ringtone(){
         delayMicroseconds(0.334*e);
         
     }
-    morse_code_output_off(piezoPins[2]);
+    morse_code_output_off(piezoPins[1]);
     delay(50);
-    morse_code_output_on(piezoPins[2], 622, ledColors[1]);
+    morse_code_output_on(piezoPins[1], 622, ledColors[1]);
     a = millis();
     while(millis() - a < 200){
         digitalWrite(piezoPins[0], HIGH);
@@ -579,7 +591,7 @@ void play_ringtone(){
         delayMicroseconds(0.334*e);
         
     }
-    morse_code_output_off(piezoPins[2]);
+    morse_code_output_off(piezoPins[1]);
 }
 
 void LCDRefresh(){
@@ -692,6 +704,7 @@ char getch_(){
         bool mainState = !digitalRead(mainButtonPin);
         bool upState = !digitalRead(upButtonPin);
         bool downState = !digitalRead(downButtonPin);
+        bool capslockState = !digitalRead(capslockButtonPin);
         currTime = millis();
 
         if(mainState != lastMainState){
@@ -748,6 +761,10 @@ char getch_(){
             lastDownState = downState;
             return 0xF;
         }
+        if(capslockState != lastCapslockState && lastCapslockState){
+            caps_lock = !caps_lock;
+            updateCapslock();
+        }
 
         //process the typed character
         if(!upState && !downState && !mainState){
@@ -784,6 +801,7 @@ char getch_(){
         lastMainState = mainState;
         lastUpState = upState;
         lastDownState = downState;
+        lastCapslockState = capslockState;
     }
 }
 
@@ -818,59 +836,66 @@ void updateCapslock(){
     digitalWrite(ledPins[3], !(shift ^ caps_lock));
 }
 
+void morse_code_calculate_delays(){
+    dot_len = 1200 / wpm;
+    dash_len = 3 * dot_len;
+    dot_thres = 1.8 * dot_len;
+    inter_char_len = 4 * dot_len;
+}
+
+//only put to EEPROM if different
+template <typename T> void eeprom_safe_put(uint32_t addr, T data){
+    T old;
+    EEPROM.get(addr, old);
+    if(old != data){
+        EEPROM.put(addr, data);
+    }
+}
+
 void eeprom_check_(){
+    uint8_t addr = 0;
 
+    rom.EEPROM_size = EEPROM.length();
+    rom.signature[0] = EEPROM.read(addr); addr++;
+    rom.signature[1] = EEPROM.read(addr); addr++;
+    rom.version[0] = EEPROM.read(addr); addr++;
+    rom.version[1] = EEPROM.read(addr); addr++;
+    rom.formatted = EEPROM.read(addr); addr++;
+    rom.corrupted = EEPROM.read(addr); addr++;
+    //settings
+    rom.wpm = EEPROM.read(addr); addr++;
+    rom.ledColors[0].red = EEPROM.read(addr); addr++;
+    rom.ledColors[0].green = EEPROM.read(addr); addr++;
+    rom.ledColors[0].blue = EEPROM.read(addr); addr++;
+    rom.ledColors[0].red = EEPROM.read(addr); addr++;
+    rom.ledColors[0].green = EEPROM.read(addr); addr++;
+    rom.ledColors[0].blue = EEPROM.read(addr); addr++;
 
+    EEPROM.get(addr, rom.piezoFreqs[0]); addr+=2;
+    EEPROM.get(addr, rom.piezoFreqs[1]); addr+=2;
+    
+    rom.fsStartAddr = addr;
 
 }
 void eeprom_display_info_(){
-    shift = false;
-    caps_lock = false;
-    updateCapslock();
-    //show main menu
-    strncpy(displayBuf[0], "EEPROM info:    ", 17);
-    //show current menu option
-    strncpy(displayBuf[1], menuEntries[menuIndex], 17);
+    Serial.println("EEPROM info:");
+    Serial.print("Size: ");Serial.println(rom.EEPROM_size);
+    Serial.print("Signature: ");Serial.print(rom.signature[0]);Serial.print(" ");Serial.println(rom.signature[1]);
+    Serial.print("Version: ");Serial.print(rom.version[0]);Serial.print(".");Serial.println(rom.version[1]);
+    Serial.print("Formatted: ");Serial.println(rom.formatted);
+    Serial.print("Corrupted: ");Serial.println(rom.corrupted);
+    Serial.print("wpm: ");Serial.println(rom.wpm);
+    Serial.println("LED colors: ");
+    Serial.print("    ");Serial.print(rom.ledColors[0].red);Serial.print(rom.ledColors[0].green);Serial.println(rom.ledColors[0].blue);
+    Serial.print("    ");Serial.print(rom.ledColors[1].red);Serial.print(rom.ledColors[1].green);Serial.println(rom.ledColors[1].blue);
+    Serial.print("    ");Serial.print(rom.ledColors[2].red);Serial.print(rom.ledColors[2].green);Serial.println(rom.ledColors[2].blue);
+    Serial.println("Piezo frequencies: ");
+    Serial.print("    ");Serial.println(rom.piezoFreqs[0]);
+    Serial.print("    ");Serial.println(rom.piezoFreqs[1]);
 
-    displayPos = (Vector2){15, 1};
-    LCDRefresh();
-    Serial.println(F("getting character..."));
-    char typed = getch_();
-    switch(typed){
-        case 0x6: { //exit/confirm
-            switch(menuIndex){
-                case 0: {
-                    Serial.println(F("freewrite"));
-                    freewrite_();
-                    break;
-                }
-                case 1: {
-                    Serial.println(F("EEPROM recheck"));
-                    eeprom_check_();
-                    eeprom_display_info_();
-                    break;
-                }
-                default: {
-                    Serial.println(F("Invalid menuIndex"));
-                    break;
-                }
-            }
-            break;
-        }
-        case 0xE: { //move left
-            menuIndex = (menuIndex == 0) ? (sizeof(menuEntries)/sizeof(menuEntries[0])-1) : menuIndex-1;
-            break;
-        }
-        case 0xF: { //move right
-            menuIndex = (menuIndex == (sizeof(menuEntries)/sizeof(menuEntries[0])-1)) ? 0 : menuIndex+1;
-                //leo typed this btw
-                //UWU~~~f
-            break;
-        }
-        default: {
+    Serial.print("fs start addr: ");Serial.println(rom.fsStartAddr);
 
-        }
-    }
+
 }
 
 
@@ -880,13 +905,13 @@ void setup(){
     pinMode(upButtonPin, INPUT_PULLUP);
     pinMode(downButtonPin, INPUT_PULLUP);
     pinMode(mainButtonPin, INPUT_PULLUP);
+    pinMode(capslockButtonPin, INPUT_PULLUP);
     pinMode(ledPins[0], OUTPUT);
     pinMode(ledPins[1], OUTPUT);
     pinMode(ledPins[2], OUTPUT);
     pinMode(ledPins[3], OUTPUT);
     pinMode(piezoPins[0], OUTPUT);
     pinMode(piezoPins[1], OUTPUT);
-    pinMode(piezoPins[2], OUTPUT);
 
     digitalWrite(ledPins[0], 0);
     digitalWrite(ledPins[1], 1);
@@ -907,12 +932,9 @@ void setup(){
     lcd.blink();
 
     //calculate some things
-    dot_len = 1200 / wpm;
-    dash_len = 3 * dot_len;
-    dot_thres = 1.8 * dot_len;
-    inter_char_len = 4 * dot_len;
+    morse_code_calculate_delays();
     
-    rom.EEPROM_size = EEPROM.length();
+    eeprom_check_();
 
     charBuf = 1;
     firstStart = true;
