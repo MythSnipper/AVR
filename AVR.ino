@@ -37,7 +37,7 @@ typedef struct{
     uint8_t y;
 } Vector2;
 typedef struct{
-    uint32_t EEPROM_size = 0;
+    uint32_t size = 0;
     //eeprom metadata
     uint8_t signature[2];
     uint8_t version[2];
@@ -102,10 +102,28 @@ Vector2 displayPos = {0, 0}; //cursor position on the lcd
 
 uint8_t menuIndex = 0;
 const char menuEntries[][17] = {
-    "1. freewrite    ",
-    "2. EEPROM info  ",
-    "3. fuck you niko",
+    "1. Freewrite    ",
+    "2. EEPROM check ",
+    "3. File manager ",
+    "4. Settings     ",
 };
+uint8_t menuIndex_eepromInfoMenu = 0;
+const char menuEntries_eepromInfoMenu_unformatted[][17] = {
+    "EEPROM metadata:",
+    "Size:           ", //1
+    "Signature:      ",
+    "Version:        ",
+    "Formatted:      ",
+    "Corrupted:      ", //5
+    "WPM:            ", //EDITABLE
+    "LED color 1:    ",
+    "LED color 2:    ",
+    "LED color 3:    ",
+    "Piezo freq 1:   ", //10
+    "Piezo freq 2:   ", //EDITABLE
+    "fs start addr:  ", //12
+};
+
 
 //modifiable settings
 uint8_t wpm = 15;
@@ -843,6 +861,63 @@ void morse_code_calculate_delays(){
     inter_char_len = 4 * dot_len;
 }
 
+
+
+void int_toStr(uint32_t value, char out[17]) {
+    char buf[16];
+    int len = 0;
+
+    // extract digits in reverse order
+    do {
+        buf[len++] = '0' + (value % 10);
+        value /= 10;
+    } while (value > 0 && len < 16);
+
+    // fill all positions with spaces
+    for (int i = 0; i < 16; ++i)
+        out[i] = ' ';
+
+    // copy digits to start (left-aligned)
+    for (int i = 0; i < len; ++i)
+        out[i] = buf[len - 1 - i];
+
+    // null terminate at the end
+    out[16] = '\0';
+}
+void ints_toStr_helper(uint32_t value, char* out, int& pos, int max_len, char oah){
+    char buf[16];
+    int len = 0;
+
+    // extract digits in reverse order
+    do {
+        buf[len++] = '0' + (value % 10);
+        value /= 10;
+    } while (value > 0 && len < 16);
+
+    // copy digits to out at current position
+    for (int i = 0; i < len && pos < max_len; ++i)
+        out[pos++] = buf[len - 1 - i];
+
+    // add a space if there is room
+    if (pos < max_len)
+        out[pos++] = oah;
+}
+template <typename T> void ints_toStr(T* numbers, int count, char out[17], char separator){
+    int pos = 0;
+
+    // fill with spaces first
+    for (int i = 0; i < 16; ++i)
+        out[i] = ' ';
+
+    // append all numbers
+    for (int i = 0; i < count; ++i)
+        ints_toStr_helper(numbers[i], out, pos, 16, separator);
+
+    out[16] = '\0'; // null terminate
+}
+
+
+
 //only put to EEPROM if different
 template <typename T> void eeprom_safe_put(uint32_t addr, T data){
     T old;
@@ -855,7 +930,7 @@ template <typename T> void eeprom_safe_put(uint32_t addr, T data){
 void eeprom_check_(){
     uint8_t addr = 0;
 
-    rom.EEPROM_size = EEPROM.length();
+    rom.size = EEPROM.length();
     rom.signature[0] = EEPROM.read(addr); addr++;
     rom.signature[1] = EEPROM.read(addr); addr++;
     rom.version[0] = EEPROM.read(addr); addr++;
@@ -867,9 +942,12 @@ void eeprom_check_(){
     rom.ledColors[0].red = EEPROM.read(addr); addr++;
     rom.ledColors[0].green = EEPROM.read(addr); addr++;
     rom.ledColors[0].blue = EEPROM.read(addr); addr++;
-    rom.ledColors[0].red = EEPROM.read(addr); addr++;
-    rom.ledColors[0].green = EEPROM.read(addr); addr++;
-    rom.ledColors[0].blue = EEPROM.read(addr); addr++;
+    rom.ledColors[1].red = EEPROM.read(addr); addr++;
+    rom.ledColors[1].green = EEPROM.read(addr); addr++;
+    rom.ledColors[1].blue = EEPROM.read(addr); addr++;
+    rom.ledColors[2].red = EEPROM.read(addr); addr++;
+    rom.ledColors[2].green = EEPROM.read(addr); addr++;
+    rom.ledColors[2].blue = EEPROM.read(addr); addr++;
 
     EEPROM.get(addr, rom.piezoFreqs[0]); addr+=2;
     EEPROM.get(addr, rom.piezoFreqs[1]); addr+=2;
@@ -877,9 +955,10 @@ void eeprom_check_(){
     rom.fsStartAddr = addr;
 
 }
-void eeprom_display_info_(){
+void eeprom_info_menu(){
+    //serial display
     Serial.println("EEPROM info:");
-    Serial.print("Size: ");Serial.println(rom.EEPROM_size);
+    Serial.print("Size: ");Serial.println(rom.size);
     Serial.print("Signature: ");Serial.print(rom.signature[0]);Serial.print(" ");Serial.println(rom.signature[1]);
     Serial.print("Version: ");Serial.print(rom.version[0]);Serial.print(".");Serial.println(rom.version[1]);
     Serial.print("Formatted: ");Serial.println(rom.formatted);
@@ -895,10 +974,163 @@ void eeprom_display_info_(){
 
     Serial.print("fs start addr: ");Serial.println(rom.fsStartAddr);
 
+    //actual display
+    while(true){
+        shift = false;
+        caps_lock = false;
+        updateCapslock();
+        //show main menu
+        strncpy(displayBuf[0], menuEntries_eepromInfoMenu_unformatted[menuIndex_eepromInfoMenu], 17);
+
+
+        switch(menuIndex_eepromInfoMenu){
+            case 0: {
+                strncpy(displayBuf[1], "y to edit       ", 17);
+                break;
+            }
+            case 1: {
+                char temp[17];
+                int_toStr(rom.size, temp);
+                strncpy(displayBuf[1], temp, 17);
+                break;
+            }
+            case 2: {
+                char temp[17];
+                ints_toStr(rom.signature, 2, temp, ' ');
+                strncpy(displayBuf[1], temp, 17);
+                break;
+            }
+            case 3: {
+                char temp[17];
+                ints_toStr(rom.version, 2, temp, '.');
+                strncpy(displayBuf[1], temp, 17);
+                break;
+            }
+            case 4: {
+                strncpy(displayBuf[1], ((rom.formatted) ? "Yuh uh :3       " : "Nuh uh >:(      "), 17);
+                break;
+            }
+            case 5: {
+                strncpy(displayBuf[1], ((rom.corrupted) ? "Yuh uh >:(      " : "Nuh uh :3       "), 17);
+                break;
+            }
+            case 6: {
+                char temp[17];
+                int_toStr(rom.wpm, temp);
+                strncpy(displayBuf[1], temp, 17);
+                break;
+            }
+
+            case 7: {
+                char temp[17];
+                uint32_t tempnums[3] = {rom.ledColors[0].red, rom.ledColors[0].green, rom.ledColors[0].blue};
+                ints_toStr(tempnums, 3, temp, ',');
+                strncpy(displayBuf[1], temp, 17);
+                break;
+            }
+            case 8: {
+                char temp[17];
+                uint32_t tempnums[3] = {rom.ledColors[1].red, rom.ledColors[1].green, rom.ledColors[1].blue};
+                ints_toStr(tempnums, 3, temp, ',');
+                strncpy(displayBuf[1], temp, 17);
+                break;
+            }
+            case 9: {
+                char temp[17];
+                uint32_t tempnums[3] = {rom.ledColors[2].red, rom.ledColors[2].green, rom.ledColors[2].blue};
+                ints_toStr(tempnums, 3, temp, ',');
+                strncpy(displayBuf[1], temp, 17);
+                break;
+            }
+
+            case 10: {
+                char temp[17];
+                int_toStr(rom.piezoFreqs[0], temp);
+                strncpy(displayBuf[1], temp, 17);
+                break;
+            }
+            case 11: {
+                char temp[17];
+                int_toStr(rom.piezoFreqs[1], temp);
+                strncpy(displayBuf[1], temp, 17);
+                break;
+            }
+
+            case 12: {
+                char temp[17];
+                int_toStr(rom.fsStartAddr, temp);
+                strncpy(displayBuf[1], temp, 17);
+                break;
+            }
+
+            default: {
+                strncpy(displayBuf[1], "brainrot        ", 17);
+                break;
+            }
+        }
+
+        displayPos = (Vector2){15, 1};
+        LCDRefresh();
+        char typed = getch_();
+        switch(typed){
+            case 0x6: { //exit/confirm
+                return;
+                break;
+            }
+            case 'y': { //edit
+                if(menuIndex_eepromInfoMenu > 5 && menuIndex_eepromInfoMenu < 12){
+                    char temp[17];
+                    
+                }
+                else{
+                    char temp[17];
+                    strncpy(temp, displayBuf[0], 17);
+                    strncpy(displayBuf[0], "NO EDITING      ", 17);
+                    LCDRefresh();
+                    delay(400);
+                    strncpy(displayBuf[0], temp, 17);
+                    LCDRefresh();
+                }
+                break;
+            }
+            case 0xE: { //move left
+                menuIndex_eepromInfoMenu = (menuIndex_eepromInfoMenu == 0) ? (sizeof(menuEntries_eepromInfoMenu_unformatted)/sizeof(menuEntries_eepromInfoMenu_unformatted[0])-1) : menuIndex_eepromInfoMenu-1;
+                morse_code_output_on(piezoPins[0], piezoFreqs[1], ledColors[1]);
+                delay(100);
+                morse_code_output_off(piezoPins[0]);
+                break;
+            }
+            case 0xF: { //move right
+                
+                menuIndex_eepromInfoMenu = (menuIndex_eepromInfoMenu == (sizeof(menuEntries_eepromInfoMenu_unformatted)/sizeof(menuEntries_eepromInfoMenu_unformatted[0])-1)) ? 0 : menuIndex_eepromInfoMenu+1;
+                    //leo typed this btw
+                    //UWU~~~f
+                morse_code_output_on(piezoPins[0], piezoFreqs[1], ledColors[1]);
+                delay(100);
+                morse_code_output_off(piezoPins[0]);
+                break;
+            }
+            default: {
+
+            }
+        }
+    }
 
 }
 
-
+bool predicate(){
+    while(true){
+        char typed = getch_();
+        switch(typed){
+            case 'y':
+                return true;
+                break;
+            case 'n':
+                return false;
+                break;
+        }
+    }
+}
 
 void setup(){
     //morse code input and output
@@ -916,15 +1148,15 @@ void setup(){
     digitalWrite(ledPins[0], 0);
     digitalWrite(ledPins[1], 1);
     digitalWrite(ledPins[2], 1);
-    delay(300);
+    delay(100);
     digitalWrite(ledPins[0], 1);
     digitalWrite(ledPins[1], 0);
     digitalWrite(ledPins[2], 1);
-    delay(300);
+    delay(100);
     digitalWrite(ledPins[0], 1);
     digitalWrite(ledPins[1], 1);
     digitalWrite(ledPins[2], 0);
-    delay(300);
+    delay(100);
 
     digitalWrite(ledPins[3], !caps_lock);
     Serial.begin(115200);
@@ -940,15 +1172,11 @@ void setup(){
     firstStart = true;
 
     Serial.println(F("Nuck arduinOS"));
-    Serial.print(F("WPM: "));Serial.println(wpm);
-    Serial.print(F("EEPROM size: "));Serial.println(rom.EEPROM_size);
 
     play_ringtone();
 
     lastOnTime = millis();
     lastOffTime = millis();
-
-
 }
 void loop(){
     shift = false;
@@ -958,10 +1186,8 @@ void loop(){
     strncpy(displayBuf[0], "Nuck ArduinOS   ", 17);
     //show current menu option
     strncpy(displayBuf[1], menuEntries[menuIndex], 17);
-
     displayPos = (Vector2){15, 1};
     LCDRefresh();
-    Serial.println(F("getting character..."));
     char typed = getch_();
     switch(typed){
         case 0x6: { //exit/confirm
@@ -972,9 +1198,25 @@ void loop(){
                     break;
                 }
                 case 1: {
-                    Serial.println(F("EEPROM recheck"));
+                    Serial.println(F("EEPROM check"));
+
+                    strncpy(displayBuf[0], "Rechecking      ", 17);
+                    strncpy(displayBuf[1], "EEPROM metadata ", 17);
+                    displayPos = (Vector2){15, 1};
+                    LCDRefresh();
+
                     eeprom_check_();
-                    eeprom_display_info_();
+                    eeprom_info_menu();
+                    break;
+                }
+                case 2: {
+                    Serial.println(F("File manager"));
+
+                    break;
+                }
+                case 3: {
+                    Serial.println(F("Settings"));
+
                     break;
                 }
                 default: {
@@ -987,7 +1229,7 @@ void loop(){
         case 0xE: { //move left
             menuIndex = (menuIndex == 0) ? (sizeof(menuEntries)/sizeof(menuEntries[0])-1) : menuIndex-1;
             morse_code_output_on(piezoPins[0], piezoFreqs[1], ledColors[1]);
-            delay(300);
+            delay(100);
             morse_code_output_off(piezoPins[0]);
             break;
         }
@@ -997,7 +1239,7 @@ void loop(){
                 //leo typed this btw
                 //UWU~~~f
             morse_code_output_on(piezoPins[0], piezoFreqs[1], ledColors[1]);
-            delay(300);
+            delay(100);
             morse_code_output_off(piezoPins[0]);
             break;
         }
